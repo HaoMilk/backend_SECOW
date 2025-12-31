@@ -7,6 +7,10 @@ import {
   forgotPassword,
   resetPassword,
   getMe,
+  refreshToken,
+  changePassword,
+  updateProfile,
+  logout,
 } from "../controllers/authController.js";
 import {
   validate,
@@ -27,9 +31,13 @@ router.post("/resend-otp", validate(forgotPasswordValidation), resendOTP);
 router.post("/login", validate(loginValidation), login);
 router.post("/forgot-password", validate(forgotPasswordValidation), forgotPassword);
 router.post("/reset-password", validate(resetPasswordValidation), resetPassword);
+router.post("/refresh-token", refreshToken);
 
 // Protected routes
 router.get("/me", authenticate, getMe);
+router.put("/profile", authenticate, updateProfile);
+router.put("/change-password", authenticate, changePassword);
+router.post("/logout", authenticate, logout);
 
 export default router;
 
