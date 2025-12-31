@@ -1,121 +1,34 @@
-import Category from "../models/Category.js";
 import asyncHandler from "../middleware/asyncHandler.js";
+import * as categoryService from "../services/categoryService.js";
 
-// @desc    Lấy tất cả danh mục
-// @route   GET /api/v1/categories
-// @access  Public
 export const getCategories = asyncHandler(async (req, res) => {
-  const categories = await Category.find({ isActive: true })
-    .sort({ order: 1, createdAt: -1 })
-    .select("-__v");
-
-  res.status(200).json({
-    success: true,
-    data: {
-      categories,
-    },
-  });
+  const result = await categoryService.getAllCategoriesService();
+  res.status(200).json(result);
 });
 
-// @desc    Lấy danh mục theo ID
-// @route   GET /api/v1/categories/:id
-// @access  Public
-export const getCategoryById = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const category = await Category.findById(id);
-
-  if (!category) {
-    return res.status(404).json({
-      success: false,
-      message: "Không tìm thấy danh mục",
-    });
-  }
-
-  res.status(200).json({
-    success: true,
-    data: {
-      category,
-    },
-  });
-});
-
-// @desc    Tạo danh mục mới
-// @route   POST /api/v1/categories
-// @access  Admin
 export const createCategory = asyncHandler(async (req, res) => {
-  const { name, slug, description, image, order } = req.body;
-
-  // Tạo slug từ name nếu không có
-  let categorySlug = slug || name.toLowerCase().replace(/\s+/g, "-");
-
-  const category = await Category.create({
-    name,
-    slug: categorySlug,
-    description,
-    image,
-    order: order || 0,
-  });
-
-  res.status(201).json({
-    success: true,
-    message: "Tạo danh mục thành công",
-    data: {
-      category,
-    },
-  });
+  const result = await categoryService.createCategoryService(req.body);
+  if (!result.success) {
+    return res.status(400).json(result);
+  }
+  res.status(201).json(result);
 });
 
-// @desc    Cập nhật danh mục
-// @route   PUT /api/v1/categories/:id
-// @access  Admin
 export const updateCategory = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const updateData = req.body;
-
-  const category = await Category.findByIdAndUpdate(id, updateData, {
-    new: true,
-    runValidators: true,
-  });
-
-  if (!category) {
-    return res.status(404).json({
-      success: false,
-      message: "Không tìm thấy danh mục",
-    });
+  const result = await categoryService.updateCategoryService(
+    req.params.id,
+    req.body
+  );
+  if (!result.success) {
+    return res.status(404).json(result);
   }
-
-  res.status(200).json({
-    success: true,
-    message: "Cập nhật danh mục thành công",
-    data: {
-      category,
-    },
-  });
+  res.status(200).json(result);
 });
 
-// @desc    Xóa danh mục
-// @route   DELETE /api/v1/categories/:id
-// @access  Admin
-export const deleteCategory = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const category = await Category.findById(id);
-
-  if (!category) {
-    return res.status(404).json({
-      success: false,
-      message: "Không tìm thấy danh mục",
-    });
+export const disableCategory = asyncHandler(async (req, res) => {
+  const result = await categoryService.disableCategoryService(req.params.id);
+  if (!result.success) {
+    return res.status(404).json(result);
   }
-
-  // Soft delete - chỉ đánh dấu không active
-  category.isActive = false;
-  await category.save();
-
-  res.status(200).json({
-    success: true,
-    message: "Xóa danh mục thành công",
-  });
+  res.status(200).json(result);
 });
-
