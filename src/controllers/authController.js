@@ -1,9 +1,11 @@
 import User from "../models/User.js";
 import OTP from "../models/OTP.js";
 import { generateOTP } from "../utils/generateOTP.js";
-import { generateToken } from "../utils/generateToken.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/generateToken.js";
 import { sendOTPEmail, sendPasswordResetEmail } from "../services/emailService.js";
+import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import asyncHandler from "../middleware/asyncHandler.js";
 
 // Đăng ký - Gửi OTP
 export const register = async (req, res) => {
@@ -148,14 +150,20 @@ export const verifyOTP = async (req, res) => {
     otpRecord.isUsed = true;
     await otpRecord.save();
 
-    // Tạo token
-    const token = generateToken(user._id);
+    // Tạo tokens
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    // Lưu refresh token vào user
+    user.refreshToken = refreshToken;
+    await user.save();
 
     res.status(201).json({
       success: true,
       message: "Đăng ký thành công",
       data: {
-        accessToken: token,
+        accessToken,
+        refreshToken,
         user: {
           id: user._id,
           name: user.name,
@@ -235,14 +243,20 @@ export const login = async (req, res) => {
       });
     }
 
-    // Tạo token
-    const token = generateToken(user._id);
+    // Tạo tokens
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+
+    // Lưu refresh token vào user
+    user.refreshToken = refreshToken;
+    await user.save();
 
     res.status(200).json({
       success: true,
       message: "Đăng nhập thành công",
       data: {
-        accessToken: token,
+        accessToken,
+        refreshToken,
         user: {
           id: user._id,
           name: user.name,
@@ -344,28 +358,120 @@ export const resetPassword = async (req, res) => {
 };
 
 // Lấy thông tin user hiện tại
-export const getMe = async (req, res) => {
+export const getMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select("-password -refreshToken");
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user,
+    },
+  });
+});
+
+// Refresh token
+export const refreshToken = asyncHandler(async (req, res) => {
+  const { refreshToken: token } = req.body;
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: "Refresh token là bắt buộc",
+    });
+  }
+
   try {
-    const user = await User.findById(req.user._id).select("-password");
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET
+    );
+
+    const user = await User.findById(decoded.userId);
+
+    if (!user || user.refreshToken !== token || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token không hợp lệ",
+      });
+    }
+
+    // Tạo access token mới
+    const accessToken = generateAccessToken(user._id);
 
     res.status(200).json({
       success: true,
       data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          isEmailVerified: user.isEmailVerified,
-        },
+        accessToken,
       },
     });
   } catch (error) {
-    console.error("Get me error:", error);
-    res.status(500).json({
+    return res.status(401).json({
       success: false,
-      message: "Lỗi lấy thông tin người dùng",
+      message: "Refresh token không hợp lệ hoặc đã hết hạn",
     });
   }
-};
+});
+
+// Đổi mật khẩu
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user._id).select("+password");
+
+  // Kiểm tra mật khẩu hiện tại
+  const isPasswordValid = await user.comparePassword(currentPassword);
+  if (!isPasswordValid) {
+    return res.status(400).json({
+      success: false,
+      message: "Mật khẩu hiện tại không đúng",
+    });
+  }
+
+  // Cập nhật mật khẩu mới
+  user.password = newPassword;
+  await user.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Đổi mật khẩu thành công",
+  });
+});
+
+// Cập nhật thông tin cá nhân
+export const updateProfile = asyncHandler(async (req, res) => {
+  const { name, phone, address, avatar } = req.body;
+
+  const updateData = {};
+  if (name) updateData.name = name;
+  if (phone) updateData.phone = phone;
+  if (address) updateData.address = address;
+  if (avatar) updateData.avatar = avatar;
+
+  const user = await User.findByIdAndUpdate(req.user._id, updateData, {
+    new: true,
+    runValidators: true,
+  }).select("-password -refreshToken");
+
+  res.status(200).json({
+    success: true,
+    message: "Cập nhật thông tin thành công",
+    data: {
+      user,
+    },
+  });
+});
+
+// Đăng xuất
+export const logout = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  if (user) {
+    user.refreshToken = undefined;
+    await user.save();
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "Đăng xuất thành công",
+  });
+});
 

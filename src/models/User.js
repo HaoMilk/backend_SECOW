@@ -41,6 +41,16 @@ const userSchema = new mongoose.Schema(
     },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
+    refreshToken: String,
+    avatar: {
+      type: String,
+    },
+    address: {
+      street: String,
+      city: String,
+      district: String,
+      ward: String,
+    },
   },
   {
     timestamps: true,
