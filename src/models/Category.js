@@ -32,8 +32,7 @@ categorySchema.pre('save', async function (next) {
     if (parentCategory && parentCategory.parentId) {
       throw new Error('Danh mục con không thể làm danh mục cha.');
     }
-  }
-  next();
+  } 
 });
 
 

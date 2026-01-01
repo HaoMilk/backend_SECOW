@@ -15,8 +15,8 @@ const productSchema = new mongoose.Schema(
     },
     attributes: [
       {
-        name: { type: String }, // Tên thuộc tính (VD: Màu, Size)
-        value: { type: String } // Giá trị (VD: Đỏ, XL)
+        name: { type: String },
+        value: { type: String } 
       }
     ],
     price: {
@@ -27,22 +27,10 @@ const productSchema = new mongoose.Schema(
     originalPrice: {
       type: Number,
       min: [0, "Giá gốc không được âm"],
-      validate: {
-        validator: function (value) {
-          return !value || value >= this.price;
-        },
-        message: "Giá gốc phải lớn hơn hoặc bằng giá bán",
-      },
     },
     images: {
       type: [String],
       default: [],
-      validate: {
-        validator: function (val) {
-          return val.length <= 5;
-        },
-        message: "Chỉ được đăng tối đa 5 ảnh",
-      },
     },
     video:{
       type: String,
@@ -73,7 +61,7 @@ const productSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["active", "pending", "hidden", "violation", "draft", "sold"],
+      enum: ["active", "pending", "hidden", "violation", "sold"],
       default: "pending",
     },
     weight:{
