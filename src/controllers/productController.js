@@ -1,4 +1,6 @@
 import Product from '../models/Product.js'
+import Category from '../models/Category.js'
+import Store from '../models/Store.js'
 import asyncHandler from '../middleware/asyncHandler.js'
 import { uploadToCloudinary } from '../config/cloudinary.js'
 
@@ -535,3 +537,174 @@ function getTimeAgo(date) {
 	if (days < 7) return `${days} ngày trước`
 	return `${Math.floor(days / 7)} tuần trước`
 }
+
+/**
+ * ==============================
+ * GET ADMIN PRODUCTS (ADMIN ONLY)
+ * ==============================
+ */
+export const getAdminProducts = asyncHandler(async (req, res) => {
+	const {
+		page = 1,
+		limit = 10,
+		status,
+		search,
+		sortBy = 'createdAt',
+		sortOrder = 'desc'
+	} = req.query
+
+	const query = {}
+
+	// Filter by status if provided
+	if (status) {
+		query.status = status
+	}
+
+	// Search by title or description
+	if (search) {
+		query.$or = [
+			{ title: { $regex: search, $options: 'i' } },
+			{ description: { $regex: search, $options: 'i' } }
+		]
+	}
+
+	// Sort
+	const sort = {}
+	const order = sortOrder === 'asc' ? 1 : -1
+	sort[sortBy] = order
+
+	const skip = (Number(page) - 1) * Number(limit)
+
+	const products = await Product.find(query)
+		.populate('seller', 'name email avatarUrl')
+		.sort(sort)
+		.skip(skip)
+		.limit(Number(limit))
+		.lean()
+
+	// Get category and store info for each product
+	const productsWithStore = await Promise.all(
+		products.map(async (product) => {
+			// Get category by categoryId (which is a string)
+			const category = product.categoryId 
+				? await Category.findById(product.categoryId).select('name').lean()
+				: null
+			
+			// Get store info for seller
+			const store = product.seller?._id
+				? await Store.findOne({ seller: product.seller._id }).lean()
+				: null
+
+			return {
+				...product,
+				category: category ? {
+					_id: category._id,
+					name: category.name
+				} : null,
+				seller: {
+					_id: product.seller?._id,
+					name: product.seller?.name,
+					email: product.seller?.email,
+					storeName: store?.storeName || product.sellerName,
+					logo: store?.logo || product.seller?.avatarUrl
+				}
+			}
+		})
+	)
+
+	const total = await Product.countDocuments(query)
+
+	res.status(200).json({
+		success: true,
+		data: {
+			products: productsWithStore
+		},
+		pagination: {
+			page: Number(page),
+			limit: Number(limit),
+			total,
+			totalPages: Math.ceil(total / Number(limit))
+		}
+	})
+})
+
+/**
+ * ==============================
+ * APPROVE PRODUCT (ADMIN ONLY)
+ * ==============================
+ */
+export const approveProduct = asyncHandler(async (req, res) => {
+	const { id } = req.params
+
+	const product = await Product.findById(id)
+
+	if (!product) {
+		return res.status(404).json({
+			success: false,
+			message: 'Không tìm thấy sản phẩm'
+		})
+	}
+
+	if (product.status !== 'pending') {
+		return res.status(400).json({
+			success: false,
+			message: `Sản phẩm đã ở trạng thái ${product.status}, không thể duyệt`
+		})
+	}
+
+	product.status = 'active'
+	await product.save()
+
+	res.status(200).json({
+		success: true,
+		message: 'Đã duyệt sản phẩm thành công',
+		data: {
+			product
+		}
+	})
+})
+
+/**
+ * ==============================
+ * REJECT PRODUCT (ADMIN ONLY)
+ * ==============================
+ */
+export const rejectProduct = asyncHandler(async (req, res) => {
+	const { id } = req.params
+	const { violationReason } = req.body
+
+	const product = await Product.findById(id)
+
+	if (!product) {
+		return res.status(404).json({
+			success: false,
+			message: 'Không tìm thấy sản phẩm'
+		})
+	}
+
+	if (product.status !== 'pending') {
+		return res.status(400).json({
+			success: false,
+			message: `Sản phẩm đã ở trạng thái ${product.status}, không thể từ chối`
+		})
+	}
+
+	if (!violationReason || violationReason.trim() === '') {
+		return res.status(400).json({
+			success: false,
+			message: 'Vui lòng nhập lý do từ chối'
+		})
+	}
+
+	product.status = 'violation'
+	product.violationReason = violationReason.trim()
+	await product.save()
+
+	res.status(200).json({
+		success: true,
+		message: 'Đã từ chối sản phẩm',
+		data: {
+			product
+		}
+	})
+})
