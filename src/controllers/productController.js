@@ -314,6 +314,94 @@ export const deleteProduct = asyncHandler(async (req, res) => {
     });
 });
 
+// Lấy sản phẩm của seller hiện tại (cần authenticate)
+export const getSellerProducts = asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    status,
+    title,
+    categoryId,
+    sortBy,
+  } = req.query;
+
+  const sellerId = req.user._id;
+
+  // Build query
+  const query = {
+    seller: sellerId,
+  };
+
+  if (status) {
+    query.status = status;
+  }
+
+  if (title) {
+    query.title = { $regex: title, $options: "i" };
+  }
+
+  if (categoryId) {
+    query.categoryId = categoryId;
+  }
+
+  // Sort
+  let sort = {};
+  if (sortBy) {
+    const [field, order] = sortBy.split(":");
+    sort[field] = order === "asc" ? 1 : -1;
+  } else {
+    sort = { createdAt: -1 };
+  }
+
+  // Pagination
+  const skip = (Number(page) - 1) * Number(limit);
+
+  // Execute query
+  const products = await Product.find(query)
+    .populate("category", "name")
+    .sort(sort)
+    .skip(skip)
+    .limit(Number(limit));
+
+  const total = await Product.countDocuments(query);
+
+  // Format response
+  const formattedProducts = products.map((product) => ({
+    _id: product._id.toString(),
+    title: product.title,
+    description: product.description,
+    price: product.price,
+    originalPrice: product.originalPrice,
+    stock: product.stock,
+    weight: product.weight,
+    brand: product.brand,
+    condition: product.condition,
+    category: product.category,
+    categoryId: product.categoryId,
+    images: product.images,
+    video: product.video,
+    location: product.location,
+    attributes: product.attributes,
+    status: product.status,
+    violationReason: product.violationReason,
+    createdAt: product.createdAt,
+    updatedAt: product.updatedAt,
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      products: formattedProducts,
+    },
+    pagination: {
+      page: Number(page),
+      limit: Number(limit),
+      total,
+      totalPages: Math.ceil(total / Number(limit)),
+    },
+  });
+});
+
 // Lấy metadata (categories và locations) từ products
 export const getProductMetadata = asyncHandler(async (req, res) => {
     // Lấy distinct categories từ products
