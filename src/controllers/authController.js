@@ -99,7 +99,7 @@ export const register = async (req, res) => {
 // Xác thực OTP và hoàn tất đăng ký
 export const verifyOTP = async (req, res) => {
   try {
-    const { email, code, name, password } = req.body;
+    const { email, code, name, password, phone, dateOfBirth } = req.body;
 
     // Tìm OTP hợp lệ
     const otpRecord = await OTP.findOne({
@@ -135,6 +135,8 @@ export const verifyOTP = async (req, res) => {
         name,
         email,
         password,
+        phone,
+        dateOfBirth: new Date(dateOfBirth),
         isEmailVerified: true,
       });
     } catch (userError) {
@@ -154,9 +156,8 @@ export const verifyOTP = async (req, res) => {
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Lưu refresh token vào user
-    user.refreshToken = refreshToken;
-    await user.save();
+    // Lưu refresh token vào user (sử dụng updateOne để tránh validation không cần thiết)
+    await User.findByIdAndUpdate(user._id, { refreshToken }, { runValidators: false });
 
     res.status(201).json({
       success: true,
@@ -247,9 +248,8 @@ export const login = async (req, res) => {
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    // Lưu refresh token vào user
-    user.refreshToken = refreshToken;
-    await user.save();
+    // Lưu refresh token vào user (sử dụng updateOne để tránh validation không cần thiết)
+    await User.findByIdAndUpdate(user._id, { refreshToken }, { runValidators: false });
 
     res.status(200).json({
       success: true,
@@ -463,11 +463,7 @@ export const updateProfile = asyncHandler(async (req, res) => {
 
 // Đăng xuất
 export const logout = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
-  if (user) {
-    user.refreshToken = undefined;
-    await user.save();
-  }
+  await User.findByIdAndUpdate(req.user._id, { refreshToken: undefined }, { runValidators: false });
 
   res.status(200).json({
     success: true,

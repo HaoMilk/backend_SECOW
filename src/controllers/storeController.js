@@ -8,7 +8,7 @@ import asyncHandler from "../middleware/asyncHandler.js";
 // @route   POST /api/v1/stores/register
 // @access  Private
 export const registerStore = asyncHandler(async (req, res) => {
-  const { storeName, description, address, phone, email } = req.body;
+  const { storeName, description, address, phone, email, logo, coverImage } = req.body;
 
   // Kiểm tra user đã có store chưa
   const existingStore = await Store.findOne({ seller: req.user._id });
@@ -28,6 +28,8 @@ export const registerStore = asyncHandler(async (req, res) => {
     address,
     phone,
     email,
+    logo,
+    coverImage,
     isApproved: false, // Cần admin phê duyệt
   });
 
