@@ -10,6 +10,7 @@ import {
 } from "../controllers/productController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
+import { upload } from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -24,8 +25,8 @@ router.get("/seller", authenticate, authorize("seller", "admin"), getSellerProdu
 router.get("/:id", getProductById);
 
 // Protected routes (cần authenticate)
-router.post("/", authenticate, authorize("seller", "admin"), createProduct);
-router.put("/:id", authenticate, updateProduct);
+router.post("/", authenticate, authorize("seller", "admin"), upload.array("images", 5), createProduct);
+router.put("/:id", authenticate, upload.array("images", 5), updateProduct);
 router.delete("/:id", authenticate, deleteProduct);
 
 export default router;

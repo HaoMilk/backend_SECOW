@@ -1,5 +1,6 @@
 import Product from '../models/Product.js'
 import asyncHandler from '../middleware/asyncHandler.js'
+import { uploadToCloudinary } from '../config/cloudinary.js'
 
 /**
  * ==============================
@@ -63,27 +64,38 @@ export const getProducts = asyncHandler(async (req, res) => {
 
 	const total = await Product.countDocuments(query)
 
-	const formattedProducts = products.map((product) => ({
-		id: product._id.toString(),
-		title: product.title,
-		price: product.price,
-		priceText: formatPrice(product.price),
-		imageUrl:
-			product.images?.length > 0
-				? product.images[0]
-				: 'https://placehold.co/400x300',
-		images: product.images,
-		condition: product.condition,
-		conditionColor: getConditionColor(product.condition),
-		sellerName: product.sellerName || product.seller?.name || 'Unknown',
-		sellerAvatarUrl: product.seller?.avatarUrl,
-		location: product.location,
-		categoryId: product.categoryId,
-		timeAgo: getTimeAgo(product.createdAt),
-		stock: product.stock,
-		status: product.status,
-		views: product.views
-	}))
+	const formattedProducts = products.map((product) => {
+		// Map condition values for frontend compatibility
+		const conditionMap = {
+			'Tốt': 'Good',
+			'Khá': 'Fair',
+			'Cũ': 'Old',
+			'Like New': 'Like New'
+		}
+		const mappedCondition = conditionMap[product.condition] || product.condition
+
+		return {
+			id: product._id.toString(),
+			title: product.title,
+			price: product.price,
+			priceText: formatPrice(product.price),
+			imageUrl:
+				product.images?.length > 0
+					? product.images[0]
+					: 'https://placehold.co/400x300',
+			images: product.images,
+			condition: mappedCondition,
+			conditionColor: getConditionColor(product.condition),
+			sellerName: product.sellerName || product.seller?.name || 'Unknown',
+			sellerAvatarUrl: product.seller?.avatarUrl,
+			location: product.location,
+			categoryId: product.categoryId,
+			timeAgo: getTimeAgo(product.createdAt),
+			stock: product.stock,
+			status: product.status,
+			views: product.views
+		}
+	})
 
 	res.status(200).json({
 		success: true,
@@ -122,6 +134,27 @@ export const getProductById = asyncHandler(async (req, res) => {
 	product.views += 1
 	await product.save()
 
+	// Map condition values for frontend compatibility
+	const conditionMap = {
+		'Tốt': 'Good',
+		'Khá': 'Fair',
+		'Cũ': 'Old',
+		'Like New': 'Like New'
+	}
+	const mappedCondition = conditionMap[product.condition] || product.condition
+
+	// Parse location if it's a string
+	let locationData = product.location
+	if (typeof locationData === 'string') {
+		// Try to parse as JSON, if fails, use as is
+		try {
+			locationData = JSON.parse(locationData)
+		} catch (e) {
+			// If not JSON, create object from string
+			locationData = { city: locationData, district: '', detail: '' }
+		}
+	}
+
 	res.status(200).json({
 		success: true,
 		data: {
@@ -135,18 +168,23 @@ export const getProductById = asyncHandler(async (req, res) => {
 					product.images?.length > 0
 						? product.images
 						: ['https://placehold.co/400x300'],
-				condition: product.condition,
+				condition: mappedCondition,
 				conditionColor: getConditionColor(product.condition),
 				sellerName: product.sellerName || product.seller?.name,
 				sellerId: product.seller?._id.toString(),
 				sellerAvatarUrl: product.seller?.avatarUrl,
-				location: product.location,
+				location: locationData,
 				categoryId: product.categoryId,
 				timeAgo: getTimeAgo(product.createdAt),
 				stock: product.stock,
 				status: product.status,
 				views: product.views,
 				sku: product.sku,
+				brand: product.brand,
+				weight: product.weight,
+				originalPrice: product.originalPrice,
+				attributes: product.attributes || [],
+				video: product.video,
 				createdAt: product.createdAt,
 				updatedAt: product.updatedAt
 			}
@@ -167,11 +205,75 @@ export const createProduct = asyncHandler(async (req, res) => {
 		})
 	}
 
+	// Upload images to Cloudinary
+	const imageUrls = []
+	if (req.files && req.files.length > 0) {
+		for (const file of req.files) {
+			try {
+				const result = await uploadToCloudinary(file.buffer, 'products')
+				imageUrls.push(result.secure_url)
+			} catch (error) {
+				console.error('Error uploading image:', error)
+				return res.status(500).json({
+					success: false,
+					message: 'Lỗi khi upload ảnh lên server'
+				})
+			}
+		}
+	}
+
+	// Handle existing images (if updating)
+	const existingImages = req.body.existingImages 
+		? (Array.isArray(req.body.existingImages) ? req.body.existingImages : [req.body.existingImages])
+		: []
+
+	// Parse location from JSON string if needed
+	let location = req.body.location
+	if (typeof location === 'string') {
+		try {
+			location = JSON.parse(location)
+		} catch (e) {
+			// If not JSON, keep as string
+		}
+	}
+
+	// Parse attributes from JSON string if needed
+	let attributes = req.body.attributes || []
+	if (typeof attributes === 'string') {
+		try {
+			attributes = JSON.parse(attributes)
+		} catch (e) {
+			attributes = []
+		}
+	}
+
+	// Map condition values
+	const conditionMap = {
+		'Good': 'Tốt',
+		'Fair': 'Khá',
+		'Old': 'Cũ',
+		'Like New': 'Like New'
+	}
+	const condition = conditionMap[req.body.condition] || req.body.condition || 'Tốt'
+
+	// Format location as string for display
+	const locationString = typeof location === 'object' 
+		? `${location.city || ''}${location.district ? ', ' + location.district : ''}${location.detail ? ', ' + location.detail : ''}`.trim()
+		: location
+
 	const product = await Product.create({
-		...req.body,
-		images: req.body.images || [],
-		condition: req.body.condition || 'Tốt',
-		stock: req.body.stock || 1,
+		title: req.body.title,
+		description: req.body.description,
+		price: Number(req.body.price),
+		originalPrice: req.body.originalPrice ? Number(req.body.originalPrice) : undefined,
+		stock: req.body.stock ? Number(req.body.stock) : 1,
+		weight: req.body.weight ? Number(req.body.weight) : undefined,
+		brand: req.body.brand,
+		condition: condition,
+		categoryId: req.body.categoryId,
+		images: [...existingImages, ...imageUrls],
+		location: locationString || location,
+		attributes: attributes,
 		seller: req.user._id,
 		sellerName: req.user.name,
 		status: 'pending'
@@ -211,11 +313,85 @@ export const updateProduct = asyncHandler(async (req, res) => {
 		})
 	}
 
+	// Upload new images to Cloudinary
+	const newImageUrls = []
+	if (req.files && req.files.length > 0) {
+		for (const file of req.files) {
+			try {
+				const result = await uploadToCloudinary(file.buffer, 'products')
+				newImageUrls.push(result.secure_url)
+			} catch (error) {
+				console.error('Error uploading image:', error)
+				return res.status(500).json({
+					success: false,
+					message: 'Lỗi khi upload ảnh lên server'
+				})
+			}
+		}
+	}
+
+	// Handle existing images
+	const existingImages = req.body.existingImages 
+		? (Array.isArray(req.body.existingImages) ? req.body.existingImages : [req.body.existingImages])
+		: []
+
+	// Parse location from JSON string if needed
+	let location = req.body.location
+	if (typeof location === 'string') {
+		try {
+			const parsed = JSON.parse(location)
+			location = typeof parsed === 'object' 
+				? `${parsed.city || ''}${parsed.district ? ', ' + parsed.district : ''}${parsed.detail ? ', ' + parsed.detail : ''}`.trim()
+				: location
+		} catch (e) {
+			// If not JSON, keep as string
+		}
+	}
+
+	// Parse attributes from JSON string if needed
+	let attributes = req.body.attributes
+	if (typeof attributes === 'string') {
+		try {
+			attributes = JSON.parse(attributes)
+		} catch (e) {
+			attributes = undefined
+		}
+	}
+
+	// Map condition values
+	if (req.body.condition) {
+		const conditionMap = {
+			'Good': 'Tốt',
+			'Fair': 'Khá',
+			'Old': 'Cũ',
+			'Like New': 'Like New'
+		}
+		req.body.condition = conditionMap[req.body.condition] || req.body.condition
+	}
+
+	// Update product fields
+	if (req.body.title) product.title = req.body.title
+	if (req.body.description !== undefined) product.description = req.body.description
+	if (req.body.price) product.price = Number(req.body.price)
+	if (req.body.originalPrice !== undefined) product.originalPrice = req.body.originalPrice ? Number(req.body.originalPrice) : undefined
+	if (req.body.stock !== undefined) product.stock = Number(req.body.stock)
+	if (req.body.weight !== undefined) product.weight = req.body.weight ? Number(req.body.weight) : undefined
+	if (req.body.brand !== undefined) product.brand = req.body.brand
+	if (req.body.condition) product.condition = req.body.condition
+	if (req.body.categoryId) product.categoryId = req.body.categoryId
+	if (location) product.location = location
+	if (attributes !== undefined) product.attributes = attributes
+	
+	// Update images: combine existing and new
+	if (newImageUrls.length > 0 || existingImages.length > 0) {
+		product.images = [...existingImages, ...newImageUrls]
+	}
+
+	// Prevent updating these fields
 	delete req.body.seller
 	delete req.body.sellerName
 	delete req.body.views
 
-	Object.assign(product, req.body)
 	await product.save()
 
 	res.status(200).json({

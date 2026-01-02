@@ -110,8 +110,24 @@ export const forgotPasswordValidation = [
   body("email").trim().isEmail().withMessage("Email không hợp lệ"),
 ];
 
+export const verifyOTPForPasswordResetValidation = [
+  body("email").trim().isEmail().withMessage("Email không hợp lệ"),
+  body("code")
+    .trim()
+    .isLength({ min: 6, max: 6 })
+    .withMessage("Mã OTP phải có 6 chữ số")
+    .isNumeric()
+    .withMessage("Mã OTP phải là số"),
+];
+
 export const resetPasswordValidation = [
-  body("token").notEmpty().withMessage("Token là bắt buộc"),
+  body("email").trim().isEmail().withMessage("Email không hợp lệ"),
+  body("code")
+    .trim()
+    .isLength({ min: 6, max: 6 })
+    .withMessage("Mã OTP phải có 6 chữ số")
+    .isNumeric()
+    .withMessage("Mã OTP phải là số"),
   body("password")
     .isLength({ min: 8 })
     .withMessage("Mật khẩu phải có ít nhất 8 ký tự")

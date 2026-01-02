@@ -5,6 +5,7 @@ import {
   resendOTP,
   login,
   forgotPassword,
+  verifyOTPForPasswordReset,
   resetPassword,
   getMe,
   refreshToken,
@@ -18,6 +19,7 @@ import {
   verifyOTPValidation,
   loginValidation,
   forgotPasswordValidation,
+  verifyOTPForPasswordResetValidation,
   resetPasswordValidation,
 } from "../middleware/validation.js";
 import { authenticate } from "../middleware/auth.js";
@@ -30,6 +32,7 @@ router.post("/verify-otp", validate(verifyOTPValidation), verifyOTP);
 router.post("/resend-otp", validate(forgotPasswordValidation), resendOTP);
 router.post("/login", validate(loginValidation), login);
 router.post("/forgot-password", validate(forgotPasswordValidation), forgotPassword);
+router.post("/verify-otp-password-reset", validate(verifyOTPForPasswordResetValidation), verifyOTPForPasswordReset);
 router.post("/reset-password", validate(resetPasswordValidation), resetPassword);
 router.post("/refresh-token", refreshToken);
 

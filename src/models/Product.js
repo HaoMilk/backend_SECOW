@@ -22,7 +22,7 @@ const productSchema = new mongoose.Schema(
     },
     condition: {
       type: String,
-      enum: ["Like New", "Tốt", "Khá", "Cũ"],
+      enum: ["Like New", "Good", "Fair", "Old", "Tốt", "Khá", "Cũ"],
       default: "Tốt",
     },
     categoryId: {
@@ -39,8 +39,30 @@ const productSchema = new mongoose.Schema(
       required: true,
     },
     location: {
-      type: String,
+      type: mongoose.Schema.Types.Mixed,
       required: [true, "Địa điểm là bắt buộc"],
+    },
+    brand: {
+      type: String,
+      trim: true,
+    },
+    weight: {
+      type: Number,
+      min: [0, "Cân nặng không được âm"],
+    },
+    originalPrice: {
+      type: Number,
+      min: [0, "Giá gốc không được âm"],
+    },
+    attributes: {
+      type: [{
+        name: String,
+        value: String
+      }],
+      default: [],
+    },
+    video: {
+      type: String,
       trim: true,
     },
     status: {
