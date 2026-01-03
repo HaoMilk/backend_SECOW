@@ -46,6 +46,10 @@ const storeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
+    isActive: {
+      type: Boolean,
+      default: true, // Cửa hàng đang hoạt động
+    },
     rating: {
       average: {
         type: Number,

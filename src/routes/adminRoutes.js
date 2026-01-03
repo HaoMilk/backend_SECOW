@@ -8,6 +8,10 @@ import {
   getSystemStats,
   getUsers,
   getPendingProducts,
+  updateStoreStatus,
+  getAllStores,
+  getRevenueChart,
+  getUserGrowthChart,
 } from "../controllers/adminController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
@@ -19,11 +23,15 @@ router.use(authenticate);
 router.use(authorize("admin"));
 
 router.get("/stats", getSystemStats);
+router.get("/stats/revenue-chart", getRevenueChart);
+router.get("/stats/user-growth", getUserGrowthChart);
 router.get("/users", getUsers);
 router.get("/stores/pending", getPendingStores);
+router.get("/stores", getAllStores);
 router.get("/products/pending", getPendingProducts);
 router.put("/stores/:storeId/approve", approveStore);
 router.put("/stores/:storeId/reject", rejectStore);
+router.put("/stores/:storeId/status", updateStoreStatus);
 router.put("/users/:userId/status", updateUserStatus);
 router.put("/products/:productId/status", updateProductStatus);
 

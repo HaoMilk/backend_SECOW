@@ -105,6 +105,48 @@ export const updateMyStore = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Lấy thông tin cửa hàng theo seller ID
+// @route   GET /api/v1/stores/seller/:sellerId
+// @access  Public
+export const getStoreBySellerId = asyncHandler(async (req, res) => {
+  const { sellerId } = req.params;
+
+  const store = await Store.findOne({ seller: sellerId, isApproved: true })
+    .populate("seller", "name email phone avatar")
+    .populate("approvedBy", "name");
+
+  if (!store) {
+    return res.status(404).json({
+      success: false,
+      message: "Không tìm thấy cửa hàng",
+    });
+  }
+
+  // Lấy thống kê
+  const productCount = await Product.countDocuments({
+    seller: store.seller._id,
+    status: "active",
+  });
+
+  const orderCount = await Order.countDocuments({
+    seller: store.seller._id,
+    status: "delivered",
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      store: {
+        ...store.toObject(),
+        stats: {
+          productCount,
+          orderCount,
+        },
+      },
+    },
+  });
+});
+
 // @desc    Lấy thông tin cửa hàng theo ID
 // @route   GET /api/v1/stores/:id
 // @access  Public
