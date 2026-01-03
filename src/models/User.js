@@ -25,6 +25,17 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       trim: true,
+      validate: {
+        validator: function(v) {
+          // Chỉ validate nếu có giá trị, không bắt buộc cho user cũ
+          if (!v) return true;
+          return /^[0-9]{10,11}$/.test(v);
+        },
+        message: "Số điện thoại phải có 10-11 chữ số",
+      },
+    },
+    dateOfBirth: {
+      type: Date,
     },
     role: {
       type: String,
@@ -51,6 +62,8 @@ const userSchema = new mongoose.Schema(
       district: String,
       ward: String,
     },
+    // Addresses are now stored in separate Address model
+    // This field is kept for backward compatibility but will be populated via virtual
   },
   {
     timestamps: true,

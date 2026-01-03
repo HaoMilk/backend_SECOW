@@ -11,14 +11,14 @@ import { authorize } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// Public routes
-router.get("/:id", getStoreById);
-
-// Protected routes
+// Protected routes - Specific routes must come before generic :id route
 router.post("/register", authenticate, registerStore);
 router.get("/me/stats", authenticate, authorize("seller", "admin"), getStoreStats);
 router.get("/me", authenticate, authorize("seller", "admin"), getMyStore);
 router.put("/me", authenticate, authorize("seller", "admin"), updateMyStore);
+
+// Public routes - Generic route must come last
+router.get("/:id", getStoreById);
 
 export default router;
 

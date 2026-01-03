@@ -37,4 +37,7 @@ router.put(
 );
 router.patch("/:id/disable", authenticate, authorize("admin"), disableCategory);
 
+// Public route - phải đặt sau các routes cụ thể
+router.get("/:id", getCategoryById);
+
 export default router;

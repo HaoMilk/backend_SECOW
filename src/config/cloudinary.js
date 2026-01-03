@@ -53,21 +53,40 @@ export const uploadCategoryImage = multer({
 
 export const uploadImageToCloudinary = (buffer, folder = "secondhand-marketplace/products") => {
   return new Promise((resolve, reject) => {
+    // Ensure Cloudinary is configured before upload
+    try {
+      ensureCloudinaryConfig();
+    } catch (error) {
+      return reject(error);
+    }
+
+    if (!buffer || buffer.length === 0) {
+      return reject(new Error("Buffer is empty or invalid"));
+    }
+
+    console.log(`Uploading to Cloudinary - Folder: ${folder}, ResourceType: ${resourceType}, Buffer size: ${buffer.length} bytes`);
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder: folder,
-        resource_type: "image",
-        transformation: [
-          {
-            width: 1200,
-            height: 1200,
-            crop: "limit",
-            quality: "auto",
-          },
-        ],
+        resource_type: resourceType,
+        ...(resourceType === "image" ? {
+          transformation: [
+            {
+              width: 1200,
+              height: 1200,
+              crop: "limit",
+              quality: "auto",
+            },
+          ],
+        } : {}),
       },
       (error, result) => {
-        if (error) return reject(error);
+        if (error) {
+          console.error("Cloudinary upload error:", error);
+          return reject(error);
+        }
+        console.log("Cloudinary upload success:", result?.secure_url || result?.url);
         resolve(result);
       }
     );

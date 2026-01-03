@@ -10,6 +10,7 @@ import messageRoutes from "./routes/messageRoutes.js";
 import storeRoutes from "./routes/storeRoutes.js";
 import transactionRoutes from "./routes/transactionRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
+import addressRoutes from "./routes/addressRoutes.js";
 import errorHandler from "./middleware/errorHandler.js";
 import logger from "./utils/logger.js";
 
@@ -64,6 +65,7 @@ app.use("/api/v1/messages", messageRoutes);
 app.use("/api/v1/stores", storeRoutes);
 app.use("/api/v1/transactions", transactionRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/addresses", addressRoutes);
 
 // Error handler (phải đặt cuối cùng)
 app.use(errorHandler);
