@@ -1,6 +1,7 @@
 import Product from '../models/Product.js'
 import Category from '../models/Category.js'
 import Store from '../models/Store.js'
+import Order from '../models/Order.js'
 import asyncHandler from '../middleware/asyncHandler.js'
 import { uploadToCloudinary } from '../config/cloudinary.js'
 
@@ -123,7 +124,7 @@ export const getProductById = asyncHandler(async (req, res) => {
 
 	const product = await Product.findById(id).populate(
 		'seller',
-		'name email phone avatarUrl'
+		'name email phone avatarUrl createdAt'
 	)
 
 	if (!product) {
@@ -135,6 +136,39 @@ export const getProductById = asyncHandler(async (req, res) => {
 
 	product.views += 1
 	await product.save()
+
+	// Lấy thông tin store của seller nếu có
+	let storeInfo = null
+	if (product.seller?._id) {
+		const store = await Store.findOne({ 
+			seller: product.seller._id, 
+			isApproved: true 
+		}).lean()
+		
+		if (store) {
+			// Lấy thống kê của seller
+			const productCount = await Product.countDocuments({
+				seller: product.seller._id,
+				status: 'active'
+			})
+			
+			const orderCount = await Order.countDocuments({
+				seller: product.seller._id,
+				status: 'delivered'
+			})
+
+			storeInfo = {
+				storeId: store._id.toString(),
+				storeName: store.storeName,
+				rating: store.rating?.average || 0,
+				totalReviews: store.rating?.count || 0,
+				totalSales: store.totalSales || 0,
+				productCount,
+				orderCount,
+				joinedDate: product.seller.createdAt || store.createdAt
+			}
+		}
+	}
 
 	// Map condition values for frontend compatibility
 	const conditionMap = {
@@ -157,6 +191,11 @@ export const getProductById = asyncHandler(async (req, res) => {
 		}
 	}
 
+	// Tính số năm tham gia (tối thiểu 1 năm để hiển thị)
+	const joinedYears = product.seller?.createdAt 
+		? Math.max(1, Math.floor((Date.now() - new Date(product.seller.createdAt).getTime()) / (1000 * 60 * 60 * 24 * 365)))
+		: 1
+
 	res.status(200).json({
 		success: true,
 		data: {
@@ -175,6 +214,17 @@ export const getProductById = asyncHandler(async (req, res) => {
 				sellerName: product.sellerName || product.seller?.name,
 				sellerId: product.seller?._id.toString(),
 				sellerAvatarUrl: product.seller?.avatarUrl,
+				sellerEmail: product.seller?.email,
+				sellerPhone: product.seller?.phone,
+				storeId: storeInfo?.storeId || null,
+				sellerInfo: storeInfo ? {
+					storeName: storeInfo.storeName,
+					rating: storeInfo.rating,
+					totalReviews: storeInfo.totalReviews,
+					totalSales: storeInfo.totalSales,
+					productCount: storeInfo.productCount,
+					joinedYears: joinedYears || 1
+				} : null,
 				location: locationData,
 				categoryId: product.categoryId,
 				timeAgo: getTimeAgo(product.createdAt),
