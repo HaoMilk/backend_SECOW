@@ -207,27 +207,92 @@ export const createProduct = asyncHandler(async (req, res) => {
 		})
 	}
 
+	console.log('=== CREATE PRODUCT DEBUG ===')
+	console.log('Files received:', req.files ? Object.keys(req.files) : 'No files')
+	console.log('Body keys:', Object.keys(req.body))
+	console.log('Creating product - Body:', { 
+		title: req.body.title, 
+		price: req.body.price,
+		categoryId: req.body.categoryId,
+		hasImages: req.files?.images?.length || 0,
+		hasVideo: req.files?.video?.length || 0,
+		existingImagesCount: Array.isArray(req.body.existingImages) ? req.body.existingImages.length : (req.body.existingImages ? 1 : 0)
+	})
+
 	// Upload images to Cloudinary
 	const imageUrls = []
-	if (req.files && req.files.length > 0) {
-		for (const file of req.files) {
+	if (req.files && req.files.images && req.files.images.length > 0) {
+		console.log(`Uploading ${req.files.images.length} image(s) to Cloudinary...`)
+		for (let i = 0; i < req.files.images.length; i++) {
+			const file = req.files.images[i]
+			console.log(`Image ${i + 1}:`, {
+				originalname: file.originalname,
+				mimetype: file.mimetype,
+				size: file.size,
+				bufferLength: file.buffer?.length || 0
+			})
 			try {
-				const result = await uploadToCloudinary(file.buffer, 'products')
+				if (!file.buffer || file.buffer.length === 0) {
+					throw new Error('File buffer is empty')
+				}
+				const result = await uploadToCloudinary(file.buffer, 'secondhand-marketplace/products', 'image')
+				console.log(`Image ${i + 1} uploaded successfully:`, result.secure_url)
 				imageUrls.push(result.secure_url)
 			} catch (error) {
-				console.error('Error uploading image:', error)
+				console.error(`Error uploading image ${i + 1} to Cloudinary:`, error)
 				return res.status(500).json({
 					success: false,
-					message: 'Lỗi khi upload ảnh lên server'
+					message: `Lỗi khi upload ảnh ${i + 1} lên Cloudinary: ${error.message || 'Unknown error'}`
 				})
 			}
 		}
+	} else {
+		console.log('No new images provided for upload')
+	}
+
+	// Upload video to Cloudinary if provided
+	let videoUrl = null
+	if (req.files && req.files.video && req.files.video.length > 0) {
+		try {
+			console.log('Uploading video to Cloudinary...')
+			const result = await uploadToCloudinary(req.files.video[0].buffer, 'secondhand-marketplace/products', 'video')
+			videoUrl = result.secure_url
+			console.log('Video uploaded successfully:', videoUrl)
+		} catch (error) {
+			console.error('Error uploading video to Cloudinary:', error)
+			return res.status(500).json({
+				success: false,
+				message: 'Lỗi khi upload video lên Cloudinary: ' + (error.message || 'Unknown error')
+			})
+		}
+	} else if (req.body.existingVideo) {
+		// Handle existing video URL
+		videoUrl = req.body.existingVideo
 	}
 
 	// Handle existing images (if updating)
-	const existingImages = req.body.existingImages 
-		? (Array.isArray(req.body.existingImages) ? req.body.existingImages : [req.body.existingImages])
-		: []
+	// FormData với nhiều field cùng tên sẽ tạo array, nếu chỉ có 1 thì là string
+	let existingImages = []
+	if (req.body.existingImages) {
+		if (Array.isArray(req.body.existingImages)) {
+			existingImages = req.body.existingImages.filter(img => img && img.trim() !== '')
+		} else if (typeof req.body.existingImages === 'string' && req.body.existingImages.trim() !== '') {
+			existingImages = [req.body.existingImages]
+		}
+	}
+	
+	console.log('Existing images:', existingImages)
+	console.log('New image URLs:', imageUrls)
+	const finalImages = [...existingImages, ...imageUrls]
+	console.log('Final images array:', finalImages)
+
+	// Validate that we have at least one image
+	if (finalImages.length === 0) {
+		return res.status(400).json({
+			success: false,
+			message: 'Vui lòng tải lên ít nhất 1 hình ảnh sản phẩm'
+		})
+	}
 
 	// Parse location from JSON string if needed
 	let location = req.body.location
@@ -263,9 +328,17 @@ export const createProduct = asyncHandler(async (req, res) => {
 		? `${location.city || ''}${location.district ? ', ' + location.district : ''}${location.detail ? ', ' + location.detail : ''}`.trim()
 		: location
 
-	const product = await Product.create({
+	// Validate required fields
+	if (!req.body.title || !req.body.price || !req.body.categoryId) {
+		return res.status(400).json({
+			success: false,
+			message: 'Vui lòng điền đầy đủ thông tin bắt buộc (tên sản phẩm, giá, danh mục)'
+		})
+	}
+
+	const productData = {
 		title: req.body.title,
-		description: req.body.description,
+		description: req.body.description || '',
 		price: Number(req.body.price),
 		originalPrice: req.body.originalPrice ? Number(req.body.originalPrice) : undefined,
 		stock: req.body.stock ? Number(req.body.stock) : 1,
@@ -273,21 +346,42 @@ export const createProduct = asyncHandler(async (req, res) => {
 		brand: req.body.brand,
 		condition: condition,
 		categoryId: req.body.categoryId,
-		images: [...existingImages, ...imageUrls],
+		images: finalImages,
 		location: locationString || location,
 		attributes: attributes,
+		video: videoUrl,
 		seller: req.user._id,
 		sellerName: req.user.name,
 		status: 'pending'
+	}
+
+	console.log('Creating product in database with data:', {
+		title: productData.title,
+		price: productData.price,
+		imagesCount: productData.images.length,
+		images: productData.images,
+		seller: productData.seller
 	})
 
-	res.status(201).json({
-		success: true,
-		message: 'Tạo sản phẩm thành công',
-		data: {
-			product
-		}
-	})
+	try {
+		const product = await Product.create(productData)
+		console.log('Product created successfully:', product._id)
+		console.log('Product images saved:', product.images)
+		
+		res.status(201).json({
+			success: true,
+			message: 'Tạo sản phẩm thành công',
+			data: {
+				product
+			}
+		})
+	} catch (error) {
+		console.error('Error creating product in database:', error)
+		return res.status(500).json({
+			success: false,
+			message: 'Lỗi khi lưu sản phẩm vào database: ' + (error.message || 'Unknown error')
+		})
+	}
 })
 
 /**
@@ -315,27 +409,83 @@ export const updateProduct = asyncHandler(async (req, res) => {
 		})
 	}
 
+	console.log('=== UPDATE PRODUCT DEBUG ===')
+	console.log('Files received:', req.files ? Object.keys(req.files) : 'No files')
+	console.log('Body keys:', Object.keys(req.body))
+
 	// Upload new images to Cloudinary
 	const newImageUrls = []
-	if (req.files && req.files.length > 0) {
-		for (const file of req.files) {
+	if (req.files && req.files.images && req.files.images.length > 0) {
+		console.log(`Uploading ${req.files.images.length} new image(s) to Cloudinary...`)
+		for (let i = 0; i < req.files.images.length; i++) {
+			const file = req.files.images[i]
+			console.log(`New image ${i + 1}:`, {
+				originalname: file.originalname,
+				mimetype: file.mimetype,
+				size: file.size,
+				bufferLength: file.buffer?.length || 0
+			})
 			try {
-				const result = await uploadToCloudinary(file.buffer, 'products')
+				if (!file.buffer || file.buffer.length === 0) {
+					throw new Error('File buffer is empty')
+				}
+				const result = await uploadToCloudinary(file.buffer, 'secondhand-marketplace/products', 'image')
+				console.log(`New image ${i + 1} uploaded successfully:`, result.secure_url)
 				newImageUrls.push(result.secure_url)
 			} catch (error) {
-				console.error('Error uploading image:', error)
+				console.error(`Error uploading new image ${i + 1}:`, error)
 				return res.status(500).json({
 					success: false,
-					message: 'Lỗi khi upload ảnh lên server'
+					message: `Lỗi khi upload ảnh ${i + 1} lên Cloudinary: ${error.message || 'Unknown error'}`
 				})
 			}
 		}
+	} else {
+		console.log('No new images provided for upload')
+	}
+
+	// Upload video to Cloudinary if provided
+	let videoUrl = undefined
+	if (req.files && req.files.video && req.files.video.length > 0) {
+		try {
+			const result = await uploadToCloudinary(req.files.video[0].buffer, 'secondhand-marketplace/products', 'video')
+			videoUrl = result.secure_url
+		} catch (error) {
+			console.error('Error uploading video:', error)
+			return res.status(500).json({
+				success: false,
+				message: 'Lỗi khi upload video lên server'
+			})
+		}
+	} else if (req.body.existingVideo !== undefined) {
+		// Handle existing video URL or null (to remove video)
+		videoUrl = req.body.existingVideo || null
 	}
 
 	// Handle existing images
-	const existingImages = req.body.existingImages 
-		? (Array.isArray(req.body.existingImages) ? req.body.existingImages : [req.body.existingImages])
-		: []
+	// FormData với nhiều field cùng tên sẽ tạo array, nếu chỉ có 1 thì là string
+	let existingImages = []
+	if (req.body.existingImages) {
+		if (Array.isArray(req.body.existingImages)) {
+			existingImages = req.body.existingImages.filter(img => img && img.trim() !== '')
+		} else if (typeof req.body.existingImages === 'string' && req.body.existingImages.trim() !== '') {
+			existingImages = [req.body.existingImages]
+		}
+	}
+	console.log('Existing images:', existingImages)
+	console.log('New image URLs:', newImageUrls)
+	const finalImages = [...existingImages, ...newImageUrls]
+	console.log('Final images array:', finalImages)
+
+	// Validate that we have at least one image when updating images
+	if (req.body.existingImages !== undefined || newImageUrls.length > 0) {
+		if (finalImages.length === 0) {
+			return res.status(400).json({
+				success: false,
+				message: 'Vui lòng giữ lại ít nhất 1 hình ảnh sản phẩm'
+			})
+		}
+	}
 
 	// Parse location from JSON string if needed
 	let location = req.body.location
@@ -383,10 +533,22 @@ export const updateProduct = asyncHandler(async (req, res) => {
 	if (req.body.categoryId) product.categoryId = req.body.categoryId
 	if (location) product.location = location
 	if (attributes !== undefined) product.attributes = attributes
+	if (videoUrl !== undefined) product.video = videoUrl
 	
 	// Update images: combine existing and new
-	if (newImageUrls.length > 0 || existingImages.length > 0) {
-		product.images = [...existingImages, ...newImageUrls]
+	// Always update if existingImages or newImageUrls are provided (even if empty arrays)
+	// This allows users to remove all images by sending empty existingImages array
+	if (req.body.existingImages !== undefined || newImageUrls.length > 0) {
+		product.images = finalImages
+		console.log('Updated product images:', product.images)
+	}
+
+	// When seller updates product, set status back to pending for re-approval
+	// Admin updates don't change status
+	if (req.user.role !== 'admin') {
+		product.status = 'pending'
+		// Clear violation reason if exists when product is updated
+		product.violationReason = undefined
 	}
 
 	// Prevent updating these fields
@@ -469,13 +631,113 @@ export const getSellerProducts = asyncHandler(async (req, res) => {
 		.sort(sort)
 		.skip(skip)
 		.limit(Number(limit))
+		.lean()
 
 	const total = await Product.countDocuments(query)
+
+	// Get category info for each product and format response
+	const formattedProducts = await Promise.all(
+		products.map(async (product) => {
+			// Get category by categoryId (which is a string)
+			const category = product.categoryId 
+				? await Category.findById(product.categoryId).select('_id name').lean()
+				: null
+
+			// Map condition values for frontend compatibility
+			const conditionMap = {
+				'Tốt': 'Good',
+				'Khá': 'Fair',
+				'Cũ': 'Old',
+				'Like New': 'Like New'
+			}
+			const mappedCondition = conditionMap[product.condition] || product.condition
+
+			// Parse location if it's a string
+			let locationData = product.location
+			if (typeof locationData === 'string') {
+				try {
+					const parsed = JSON.parse(locationData)
+					if (typeof parsed === 'object' && parsed !== null) {
+						locationData = parsed
+					} else {
+						// Try to parse from comma-separated string format
+						const parts = locationData.split(',').map(s => s.trim()).filter(Boolean)
+						if (parts.length >= 3) {
+							locationData = {
+								city: parts[0] || "",
+								district: parts[1] || "",
+								detail: parts.slice(2).join(', ') || ""
+							}
+						} else if (parts.length === 2) {
+							locationData = {
+								city: parts[0] || "",
+								district: "",
+								detail: parts[1] || ""
+							}
+						} else {
+							locationData = { city: "", district: "", detail: locationData }
+						}
+					}
+				} catch (e) {
+					// If not JSON, try to parse from comma-separated string
+					const parts = locationData.split(',').map(s => s.trim()).filter(Boolean)
+					if (parts.length >= 3) {
+						locationData = {
+							city: parts[0] || "",
+							district: parts[1] || "",
+							detail: parts.slice(2).join(', ') || ""
+						}
+					} else if (parts.length === 2) {
+						locationData = {
+							city: parts[0] || "",
+							district: "",
+							detail: parts[1] || ""
+						}
+					} else {
+						locationData = { city: "", district: "", detail: locationData }
+					}
+				}
+			} else if (!locationData || typeof locationData !== 'object') {
+				locationData = { city: "", district: "", detail: "" }
+			} else {
+				// Ensure location object has all required fields
+				locationData = {
+					city: locationData.city || "",
+					district: locationData.district || "",
+					detail: locationData.detail || ""
+				}
+			}
+
+			return {
+				_id: product._id.toString(),
+				title: product.title,
+				description: product.description || "",
+				price: product.price,
+				originalPrice: product.originalPrice || 0,
+				stock: product.stock || 0,
+				weight: product.weight || 0,
+				brand: product.brand || "",
+				condition: mappedCondition,
+				categoryId: product.categoryId || "",
+				category: category ? {
+					_id: category._id.toString(),
+					name: category.name
+				} : null,
+				video: product.video || null,
+				location: locationData,
+				attributes: product.attributes || [],
+				images: product.images || [],
+				status: product.status,
+				createdAt: product.createdAt,
+				updatedAt: product.updatedAt
+			}
+		})
+	)
 
 	res.status(200).json({
 		success: true,
 		data: {
-			products,
+			products: formattedProducts,
 			pagination: {
 				page: Number(page),
 				limit: Number(limit),

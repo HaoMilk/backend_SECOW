@@ -31,8 +31,9 @@ router.get("/seller", authenticate, authorize("seller", "admin"), getSellerProdu
 router.get("/:id", getProductById);
 
 // Protected routes (cần authenticate)
-router.post("/", authenticate, authorize("seller", "admin"), upload.array("images", 5), createProduct);
-router.put("/:id", authenticate, upload.array("images", 5), updateProduct);
+// Use fields to handle both images and video separately
+router.post("/", authenticate, authorize("seller", "admin"), upload.fields([{ name: "images", maxCount: 5 }, { name: "video", maxCount: 1 }]), createProduct);
+router.put("/:id", authenticate, upload.fields([{ name: "images", maxCount: 5 }, { name: "video", maxCount: 1 }]), updateProduct);
 router.delete("/:id", authenticate, deleteProduct);
 
 // Admin approval routes (phải đặt SAU route /:id để tránh conflict)
