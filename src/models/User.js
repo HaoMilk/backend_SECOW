@@ -62,6 +62,8 @@ const userSchema = new mongoose.Schema(
       district: String,
       ward: String,
     },
+    // Addresses are now stored in separate Address model
+    // This field is kept for backward compatibility but will be populated via virtual
   },
   {
     timestamps: true,
