@@ -1,13 +1,16 @@
 import express from "express";
 import {
+  getProducts,
+  getProductById,
   createProduct,
   updateProduct,
-  hideProduct,
   deleteProduct,
+  getProductMetadata,
+  getSellerProducts,
+  getAdminProducts,
   approveProduct,
   rejectProduct,
-  getProductsBySeller,
-  getAdminProducts,
+  hideProduct,
 } from "../controllers/productController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
@@ -16,23 +19,30 @@ import { upload } from "../config/cloudinary.js";
 const router = express.Router();
 
 // Public routes
-// router.get("/metadata", getProductMetadata);
-// router.get("/", getProducts);
-// router.get("/:id", getProductById);
+router.get("/metadata", getProductMetadata);
+router.get("/", getProducts);
 
-// Seller routes
-router.get("/seller", authenticate, authorize("seller"), getProductsBySeller);
+// Admin routes (phải đặt TRƯỚC route /:id để tránh conflict)
+router.get("/admin", authenticate, authorize("admin"), getAdminProducts);
 
-// Protected routes
-router.post("/", authenticate, authorize("seller"), upload, createProduct);
-router.put("/:id", authenticate, authorize("seller"), upload, updateProduct);
-router.patch("/:id/hide", authenticate, authorize("seller"), hideProduct);
-router.delete("/:id/delete", authenticate, authorize("seller"), deleteProduct);
+// Protected route - Lấy sản phẩm của seller (phải đặt TRƯỚC route /:id)
+router.get("/seller", authenticate, authorize("seller", "admin"), getSellerProducts);
 
-// Admin routes
-router.get("/admin", getAdminProducts);
+// Public route - Lấy sản phẩm theo ID (phải đặt SAU route /seller và /admin)
+router.get("/:id", getProductById);
+
+// Protected routes (cần authenticate)
+// Use fields to handle both images and video separately
+router.post("/", authenticate, authorize("seller", "admin"), upload.fields([{ name: "images", maxCount: 5 }, { name: "video", maxCount: 1 }]), createProduct);
+router.put("/:id", authenticate, upload.fields([{ name: "images", maxCount: 5 }, { name: "video", maxCount: 1 }]), updateProduct);
+router.delete("/:id", authenticate, deleteProduct);
+
+// Admin approval routes (phải đặt SAU route /:id để tránh conflict)
 router.patch("/:id/approve", authenticate, authorize("admin"), approveProduct);
 router.patch("/:id/reject", authenticate, authorize("admin"), rejectProduct);
 
+// Hide/Unhide product route (seller and admin)
+router.patch("/:id/hide", authenticate, authorize("seller", "admin"), hideProduct);
 
 export default router;
+

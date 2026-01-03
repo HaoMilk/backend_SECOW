@@ -6,44 +6,27 @@ const productSchema = new mongoose.Schema(
       type: String,
       required: [true, "Tên sản phẩm là bắt buộc"],
       trim: true,
-      maxLength: [200, "Tên sản phẩm không được quá 200 ký tự"],
     },
     description: {
       type: String,
       trim: true,
-      maxLength: [5000, "Mô tả không được quá 5000 ký tự"],
     },
-    attributes: [
-      {
-        name: { type: String },
-        value: { type: String } 
-      }
-    ],
     price: {
       type: Number,
       required: [true, "Giá sản phẩm là bắt buộc"],
       min: [0, "Giá không được âm"],
     },
-    originalPrice: {
-      type: Number,
-      min: [0, "Giá gốc không được âm"],
-    },
     images: {
       type: [String],
       default: [],
     },
-    video:{
-      type: String,
-      trim: true,
-    },
     condition: {
       type: String,
-      enum: ["Like New", "Good", "Fair", "Old"],
-      default: "Good",
+      enum: ["Like New", "Good", "Fair", "Old", "Tốt", "Khá", "Cũ"],
+      default: "Tốt",
     },
     categoryId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Category",
+      type: String,
       required: [true, "Danh mục là bắt buộc"],
     },
     seller: {
@@ -51,30 +34,50 @@ const productSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Người bán là bắt buộc"],
     },
+    sellerName: {
+      type: String,
+      required: true,
+    },
     location: {
-      type: {
-        city: { type: String, required: true },
-        district: { type: String },
-        detail: { type: String },
-      },
-      _id: false,
+      type: mongoose.Schema.Types.Mixed,
+      required: [true, "Địa điểm là bắt buộc"],
+    },
+    brand: {
+      type: String,
+      trim: true,
+    },
+    weight: {
+      type: Number,
+      min: [0, "Cân nặng không được âm"],
+    },
+    originalPrice: {
+      type: Number,
+      min: [0, "Giá gốc không được âm"],
+    },
+    attributes: {
+      type: [{
+        name: String,
+        value: String
+      }],
+      default: [],
+    },
+    video: {
+      type: String,
+      trim: true,
     },
     status: {
       type: String,
-      enum: ["active", "pending", "hidden", "violation", "sold"],
+      enum: ["active", "pending", "hidden", "violation", "draft"],
       default: "pending",
-    },
-    weight:{
-      type: Number,
-      default: 0,
-    },
-    brand:{
-      type: String,
     },
     stock: {
       type: Number,
       default: 1,
       min: [0, "Số lượng không được âm"],
+    },
+    sku: {
+      type: String,
+      trim: true,
     },
     violationReason: {
       type: String,
