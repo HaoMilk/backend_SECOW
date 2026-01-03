@@ -1,57 +1,84 @@
 import { v2 as cloudinary } from "cloudinary";
 import multer from "multer";
 import { Readable } from "stream";
-import dotenv from "dotenv";
 
-dotenv.config();
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// Function to ensure Cloudinary is configured
+const ensureCloudinaryConfig = () => {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
+  if (!cloudName || !apiKey || !apiSecret) {
+    console.error("Cloudinary environment variables missing:");
+    console.error("CLOUDINARY_CLOUD_NAME:", cloudName ? "✓ Set" : "✗ Missing");
+    console.error("CLOUDINARY_API_KEY:", apiKey ? "✓ Set" : "✗ Missing");
+    console.error("CLOUDINARY_API_SECRET:", apiSecret ? "✓ Set" : "✗ Missing");
+    throw new Error("Cloudinary configuration is missing. Please check your .env file.");
+  }
+
+  // Reconfigure to ensure latest env vars are used
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
+  });
+
+  return true;
+};
+
+// Initial config attempt
+try {
+  ensureCloudinaryConfig();
+  console.log("Cloudinary configured successfully");
+} catch (error) {
+  console.warn("Cloudinary initial config failed:", error.message);
+  console.warn("Will retry when uploadToCloudinary is called");
+}
+
+// Memory storage cho multer
 const storage = multer.memoryStorage();
 
 export const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit for files
+    fileSize: 20 * 1024 * 1024, // 20MB (for video support)
   },
   fileFilter: (req, file, cb) => {
-    if (file.fieldname === "images") {
+    // Check if it's an image field (support both "image" and "images")
+    if (file.fieldname === "images" || file.fieldname === "image") {
       const allowedTypes = /jpeg|jpg|png|webp/;
-      if (!allowedTypes.test(file.mimetype)) {
-        return cb(new Error("Chỉ cho phép upload file ảnh (jpeg, jpg, png, webp)"));
+      const extname = allowedTypes.test(
+        file.originalname.toLowerCase().split(".").pop()
+      );
+      const mimetype = allowedTypes.test(file.mimetype);
+
+      if (mimetype && extname) {
+        return cb(null, true);
+      } else {
+        cb(new Error("Chỉ cho phép upload file ảnh (jpeg, jpg, png, webp)"));
       }
-    } else if (file.fieldname === "video") {
-      const allowedTypes = /mp4|mov|avi/;
-      if (!allowedTypes.test(file.mimetype)) {
-        return cb(new Error("Chỉ cho phép upload file video (mp4, mov, avi)"));
+    } 
+    // Check if it's a video field
+    else if (file.fieldname === "video") {
+      const allowedTypes = /mp4|webm|ogg/;
+      const extname = allowedTypes.test(
+        file.originalname.toLowerCase().split(".").pop()
+      );
+      const mimetype = /video\/(mp4|webm|ogg)/.test(file.mimetype);
+
+      if (mimetype && extname) {
+        return cb(null, true);
+      } else {
+        cb(new Error("Chỉ cho phép upload file video (mp4, webm, ogg)"));
       }
+    } else {
+      cb(new Error("Field name không hợp lệ"));
     }
-    cb(null, true);
   },
-}).fields([
-  { name: 'images', maxCount: 5 },
-  { name: 'video', maxCount: 1 }
-]);
+});
 
-export const uploadCategoryImage = multer({
-  storage: storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit for category image
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|webp/;
-    if (!allowedTypes.test(file.mimetype)) {
-      return cb(new Error("Chỉ cho phép upload file ảnh (jpeg, jpg, png, webp)"));
-    }
-    cb(null, true);
-  },
-}).single('image');
-
-
-export const uploadImageToCloudinary = (buffer, folder = "secondhand-marketplace/products") => {
+// Helper function để upload buffer lên Cloudinary
+export const uploadToCloudinary = (buffer, folder = "secondhand-marketplace", resourceType = "image") => {
   return new Promise((resolve, reject) => {
     // Ensure Cloudinary is configured before upload
     try {
@@ -90,28 +117,34 @@ export const uploadImageToCloudinary = (buffer, folder = "secondhand-marketplace
         resolve(result);
       }
     );
-    Readable.from(buffer).pipe(uploadStream);
+
+    const readableStream = new Readable();
+    readableStream.push(buffer);
+    readableStream.push(null);
+    readableStream.pipe(uploadStream);
   });
 };
 
-export const uploadVideoToCloudinary = (buffer, folder = "secondhand-marketplace/products") => {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          folder: folder,
-          resource_type: "video",
-        },
-        (error, result) => {
-          if (error) return reject(error);
-          resolve(result);
-        }
-      );
-      Readable.from(buffer).pipe(uploadStream);
-    });
-  };
+// Helper function để upload từ URL
+export const uploadFromUrl = (url, folder = "secondhand-marketplace") => {
+  return cloudinary.uploader.upload(url, {
+    folder: folder,
+    resource_type: "image",
+    transformation: [
+      {
+        width: 1200,
+        height: 1200,
+        crop: "limit",
+        quality: "auto",
+      },
+    ],
+  });
+};
 
+// Helper function để xóa ảnh
 export const deleteFromCloudinary = (publicId) => {
   return cloudinary.uploader.destroy(publicId);
 };
 
 export default cloudinary;
+
