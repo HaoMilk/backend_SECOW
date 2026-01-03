@@ -44,8 +44,8 @@ export const upload = multer({
     fileSize: 20 * 1024 * 1024, // 20MB (for video support)
   },
   fileFilter: (req, file, cb) => {
-    // Check if it's an image field
-    if (file.fieldname === "images") {
+    // Check if it's an image field (support both "image" and "images")
+    if (file.fieldname === "images" || file.fieldname === "image") {
       const allowedTypes = /jpeg|jpg|png|webp/;
       const extname = allowedTypes.test(
         file.originalname.toLowerCase().split(".").pop()

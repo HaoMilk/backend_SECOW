@@ -30,6 +30,11 @@ const categorySchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    parentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -39,6 +44,7 @@ const categorySchema = new mongoose.Schema(
 // Index
 categorySchema.index({ slug: 1 });
 categorySchema.index({ isActive: 1, order: 1 });
+categorySchema.index({ parentId: 1 });
 
 const Category = mongoose.model("Category", categorySchema);
 
