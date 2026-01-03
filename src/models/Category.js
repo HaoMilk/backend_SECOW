@@ -8,17 +8,6 @@ const categorySchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
-    slug: {
-      type: String,
-      required: true,
-      unique: true,
-      lowercase: true,
-      trim: true,
-    },
-    description: {
-      type: String,
-      trim: true,
-    },
     image: {
       type: String,
     },
@@ -26,27 +15,27 @@ const categorySchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    order: {
-      type: Number,
-      default: 0,
-    },
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
       default: null,
-    },
+    }
   },
   {
     timestamps: true,
   }
 );
 
-// Index
-categorySchema.index({ slug: 1 });
-categorySchema.index({ isActive: 1, order: 1 });
-categorySchema.index({ parentId: 1 });
+categorySchema.pre('save', async function (next) {
+  if (this.parentId) {
+    const parentCategory = await this.constructor.findById(this.parentId);
+    if (parentCategory && parentCategory.parentId) {
+      throw new Error('Danh mục con không thể làm danh mục cha.');
+    }
+  } 
+});
+
 
 const Category = mongoose.model("Category", categorySchema);
 
 export default Category;
-

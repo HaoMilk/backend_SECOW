@@ -1,17 +1,16 @@
 import express from "express";
 import {
   getCategories,
-  getCategoryById,
   createCategory,
   updateCategory,
-  deleteCategory,
-  getCategoriesForAdmin,
-  getParentCategories,
   disableCategory,
+  getAdminCategories,
+  getAdminCategoryById,
+  getParentCategories,
 } from "../controllers/categoryController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
-import { upload } from "../config/cloudinary.js";
+import { uploadCategoryImage } from "../config/cloudinary.js";
 
 const router = express.Router();
 
@@ -19,39 +18,26 @@ const router = express.Router();
 router.get("/", getCategories);
 router.get("/parents", getParentCategories);
 
-// Admin routes - phải đặt trước /:id để tránh conflict
-router.get(
-  "/admin",
-  authenticate,
-  authorize("admin"),
-  getCategoriesForAdmin
-);
-
-// Admin routes với upload middleware
+// Admin routes
+router.get("/admin", authenticate, authorize("admin"), getAdminCategories);
+router.get("/admin/:id", authenticate, authorize("admin"), getAdminCategoryById);
 router.post(
   "/",
   authenticate,
   authorize("admin"),
-  upload.fields([{ name: "image", maxCount: 1 }]),
+  uploadCategoryImage,
   createCategory
-);
-router.patch(
-  "/:id/disable",
-  authenticate,
-  authorize("admin"),
-  disableCategory
 );
 router.put(
   "/:id",
   authenticate,
   authorize("admin"),
-  upload.fields([{ name: "image", maxCount: 1 }]),
+  uploadCategoryImage,
   updateCategory
 );
-router.delete("/:id", authenticate, authorize("admin"), deleteCategory);
+router.patch("/:id/disable", authenticate, authorize("admin"), disableCategory);
 
 // Public route - phải đặt sau các routes cụ thể
 router.get("/:id", getCategoryById);
 
 export default router;
-
