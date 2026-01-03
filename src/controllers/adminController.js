@@ -101,6 +101,94 @@ export const getPendingStores = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Khóa/Mở khóa cửa hàng
+// @route   PUT /api/v1/admin/stores/:storeId/status
+// @access  Private (Admin)
+export const updateStoreStatus = asyncHandler(async (req, res) => {
+  const { storeId } = req.params;
+  const { isActive } = req.body;
+
+  const store = await Store.findById(storeId).populate("seller");
+
+  if (!store) {
+    return res.status(404).json({
+      success: false,
+      message: "Không tìm thấy cửa hàng",
+    });
+  }
+
+  if (!store.isApproved) {
+    return res.status(400).json({
+      success: false,
+      message: "Không thể khóa/mở khóa cửa hàng chưa được phê duyệt",
+    });
+  }
+
+  store.isActive = isActive;
+  await store.save();
+
+  res.status(200).json({
+    success: true,
+    message: isActive ? "Đã mở khóa cửa hàng" : "Đã khóa cửa hàng",
+    data: {
+      store: {
+        id: store._id,
+        storeName: store.storeName,
+        isActive: store.isActive,
+        seller: {
+          id: store.seller._id,
+          name: store.seller.name,
+          email: store.seller.email,
+        },
+      },
+    },
+  });
+});
+
+// @desc    Lấy danh sách tất cả cửa hàng (đã phê duyệt)
+// @route   GET /api/v1/admin/stores
+// @access  Private (Admin)
+export const getAllStores = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, isActive, search } = req.query;
+
+  const query = { isApproved: true };
+  
+  if (isActive !== undefined) {
+    query.isActive = isActive === "true";
+  }
+
+  if (search) {
+    query.$or = [
+      { storeName: { $regex: search, $options: "i" } },
+      { email: { $regex: search, $options: "i" } },
+      { phone: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const stores = await Store.find(query)
+    .populate("seller", "name email phone")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit));
+
+  const total = await Store.countDocuments(query);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      stores,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    },
+  });
+});
+
 // @desc    Khóa/Mở tài khoản
 // @route   PUT /api/v1/admin/users/:userId/status
 // @access  Private (Admin)
@@ -323,6 +411,125 @@ export const getPendingProducts = asyncHandler(async (req, res) => {
         total,
         totalPages: Math.ceil(total / Number(limit)),
       },
+    },
+  });
+});
+
+// @desc    Lấy dữ liệu biểu đồ doanh thu theo thời gian
+// @route   GET /api/v1/admin/stats/revenue-chart
+// @access  Private (Admin)
+export const getRevenueChart = asyncHandler(async (req, res) => {
+  const { days = 30 } = req.query;
+  const daysNum = Number(days);
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - daysNum);
+  startDate.setHours(0, 0, 0, 0);
+
+  // Lấy dữ liệu doanh thu theo ngày
+  const revenueData = await Order.aggregate([
+    {
+      $match: {
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: startDate },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: "%d/%m", date: "$createdAt" },
+        },
+        value: { $sum: "$totalAmount" },
+        orderCount: { $sum: 1 },
+      },
+    },
+    {
+      $sort: { _id: 1 },
+    },
+  ]);
+
+  // Format dữ liệu cho biểu đồ
+  const chartData = revenueData.map((item) => ({
+    name: item._id,
+    value: item.value,
+    orderCount: item.orderCount,
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      chartData,
+    },
+  });
+});
+
+// @desc    Lấy dữ liệu tăng trưởng người dùng theo tuần
+// @route   GET /api/v1/admin/stats/user-growth
+// @access  Private (Admin)
+export const getUserGrowthChart = asyncHandler(async (req, res) => {
+  // Lấy dữ liệu 7 ngày gần nhất
+  const days = [];
+  const dayNames = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - i);
+    date.setHours(0, 0, 0, 0);
+    days.push({
+      date,
+      dayName: dayNames[date.getDay()],
+    });
+  }
+
+  // Đếm số người dùng mới đăng ký mỗi ngày
+  const userGrowthData = await Promise.all(
+    days.map(async (day, index) => {
+      const nextDay = index < days.length - 1 ? days[index + 1].date : new Date();
+      nextDay.setHours(23, 59, 59, 999);
+
+      const count = await User.countDocuments({
+        createdAt: {
+          $gte: day.date,
+          $lt: nextDay,
+        },
+      });
+
+      return {
+        name: day.dayName,
+        value: count,
+      };
+    })
+  );
+
+  // Tính tổng người dùng mới trong tuần
+  const totalNewUsers = userGrowthData.reduce((sum, item) => sum + item.value, 0);
+
+  // Tính phần trăm tăng trưởng (so với tuần trước)
+  const lastWeekStart = new Date();
+  lastWeekStart.setDate(lastWeekStart.getDate() - 13);
+  lastWeekStart.setHours(0, 0, 0, 0);
+  const lastWeekEnd = new Date();
+  lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
+  lastWeekEnd.setHours(23, 59, 59, 999);
+
+  const lastWeekCount = await User.countDocuments({
+    createdAt: {
+      $gte: lastWeekStart,
+      $lt: lastWeekEnd,
+    },
+  });
+
+  const growthPercent = lastWeekCount > 0
+    ? (((totalNewUsers - lastWeekCount) / lastWeekCount) * 100).toFixed(1)
+    : totalNewUsers > 0 ? "100" : "0";
+
+  res.status(200).json({
+    success: true,
+    data: {
+      chartData: userGrowthData,
+      totalNewUsers,
+      growthPercent: parseFloat(growthPercent),
     },
   });
 });
