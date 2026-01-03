@@ -600,6 +600,64 @@ export const deleteProduct = asyncHandler(async (req, res) => {
 
 /**
  * ==============================
+ * HIDE/UNHIDE PRODUCT
+ * ==============================
+ */
+export const hideProduct = asyncHandler(async (req, res) => {
+	const { id } = req.params
+	const { status } = req.body
+
+	// Validate status
+	if (!status || (status !== 'active' && status !== 'hidden')) {
+		return res.status(400).json({
+			success: false,
+			message: 'Trạng thái không hợp lệ. Chỉ có thể là "active" hoặc "hidden"'
+		})
+	}
+
+	const product = await Product.findById(id)
+
+	if (!product) {
+		return res.status(404).json({
+			success: false,
+			message: 'Không tìm thấy sản phẩm'
+		})
+	}
+
+	// Check permission: only seller or admin can hide/unhide
+	if (
+		product.seller.toString() !== req.user._id.toString() &&
+		req.user.role !== 'admin'
+	) {
+		return res.status(403).json({
+			success: false,
+			message: 'Bạn không có quyền thay đổi trạng thái sản phẩm này'
+		})
+	}
+
+	// Only allow toggling between active and hidden
+	if (product.status !== 'active' && product.status !== 'hidden') {
+		return res.status(400).json({
+			success: false,
+			message: `Chỉ có thể thay đổi trạng thái sản phẩm đang hoạt động hoặc đang ẩn. Trạng thái hiện tại: ${product.status}`
+		})
+	}
+
+	// Update status
+	product.status = status
+	await product.save()
+
+	res.status(200).json({
+		success: true,
+		message: status === 'hidden' ? 'Đã ẩn sản phẩm thành công' : 'Đã hiện sản phẩm thành công',
+		data: {
+			product
+		}
+	})
+})
+
+/**
+ * ==============================
  * GET SELLER PRODUCTS (DASHBOARD)
  * ==============================
  */

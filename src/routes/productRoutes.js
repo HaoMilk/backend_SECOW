@@ -10,6 +10,7 @@ import {
   getAdminProducts,
   approveProduct,
   rejectProduct,
+  hideProduct,
 } from "../controllers/productController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
@@ -39,6 +40,9 @@ router.delete("/:id", authenticate, deleteProduct);
 // Admin approval routes (phải đặt SAU route /:id để tránh conflict)
 router.patch("/:id/approve", authenticate, authorize("admin"), approveProduct);
 router.patch("/:id/reject", authenticate, authorize("admin"), rejectProduct);
+
+// Hide/Unhide product route (seller and admin)
+router.patch("/:id/hide", authenticate, authorize("seller", "admin"), hideProduct);
 
 export default router;
 
