@@ -52,8 +52,8 @@ reviewSchema.index({ product: 1 });
 reviewSchema.index({ order: 1 });
 reviewSchema.index({ createdAt: -1 });
 
-// Đảm bảo mỗi đơn hàng chỉ có 1 đánh giá
-reviewSchema.index({ order: 1 }, { unique: true });
+// Đảm bảo mỗi sản phẩm trong đơn hàng chỉ có 1 đánh giá
+reviewSchema.index({ order: 1, product: 1 }, { unique: true });
 
 const Review = mongoose.model("Review", reviewSchema);
 

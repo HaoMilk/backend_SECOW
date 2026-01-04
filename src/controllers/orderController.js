@@ -2,6 +2,7 @@ import Order from "../models/Order.js";
 import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 import Transaction from "../models/Transaction.js";
+import Review from "../models/Review.js";
 import asyncHandler from "../middleware/asyncHandler.js";
 
 // @desc    Tạo đơn hàng từ giỏ hàng
@@ -246,10 +247,30 @@ export const getOrderById = asyncHandler(async (req, res) => {
     });
   }
 
+  // Lấy thông tin đánh giá nếu đơn hàng đã giao
+  let reviewInfo = null;
+  if (order.status === "delivered") {
+    const reviews = await Review.find({ order: id }).select("product");
+    const reviewedProductIds = reviews.map((r) => r.product.toString());
+    
+    reviewInfo = {
+      canReview: true,
+      reviewedProducts: reviewedProductIds,
+      allReviewed: order.items.every((item) =>
+        reviewedProductIds.includes(item.product.toString())
+      ),
+    };
+  }
+
+  const orderObj = order.toObject();
+  if (reviewInfo) {
+    orderObj.reviewInfo = reviewInfo;
+  }
+
   res.status(200).json({
     success: true,
     data: {
-      order,
+      order: orderObj,
     },
   });
 });

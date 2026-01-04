@@ -3,6 +3,8 @@ import {
   createReview,
   getSellerReviews,
   getProductReviews,
+  checkOrderReviewStatus,
+  getOrderReviews,
 } from "../controllers/reviewController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -13,7 +15,10 @@ router.get("/seller/:sellerId", getSellerReviews);
 router.get("/product/:productId", getProductReviews);
 
 // Protected routes
-router.post("/", authenticate, createReview);
+router.use(authenticate);
+router.post("/", createReview);
+router.get("/order/:orderId/check", checkOrderReviewStatus);
+router.get("/order/:orderId", getOrderReviews);
 
 export default router;
 
