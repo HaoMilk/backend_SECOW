@@ -16,13 +16,18 @@ export const getProducts = asyncHandler(async (req, res) => {
 		limit = 12,
 		categoryId,
 		location,
+		city,
+		district,
 		condition,
+		brand,
 		minPrice,
 		maxPrice,
 		sortBy = 'newest',
 		status,
 		sellerId,
-		search
+		search,
+		hasStock,
+		minRating
 	} = req.query
 
 	const query = {}
@@ -34,27 +39,161 @@ export const getProducts = asyncHandler(async (req, res) => {
 		query.status = 'active'
 	}
 
+	// Filter by category
 	if (categoryId) query.categoryId = categoryId
-	if (location) query.location = location
-	if (condition) query.condition = condition
+
+	// Build location filter conditions
+	const locationConditions = []
+	
+	// Filter by location - hỗ trợ cả string và object
+	if (location) {
+		// Nếu location là string JSON, parse nó
+		if (typeof location === 'string') {
+			try {
+				const parsedLocation = JSON.parse(location)
+				if (typeof parsedLocation === 'object' && parsedLocation !== null) {
+					// Nếu là object với city/district
+					if (parsedLocation.city) {
+						locationConditions.push(
+							{ 'location.city': { $regex: parsedLocation.city, $options: 'i' } },
+							{ location: { $regex: parsedLocation.city, $options: 'i' } }
+						)
+					}
+					if (parsedLocation.district) {
+						locationConditions.push(
+							{ 'location.district': { $regex: parsedLocation.district, $options: 'i' } },
+							{ location: { $regex: parsedLocation.district, $options: 'i' } }
+						)
+					}
+				} else {
+					// Nếu parse ra không phải object, dùng như string
+					locationConditions.push(
+						{ 'location.city': { $regex: location, $options: 'i' } },
+						{ 'location.district': { $regex: location, $options: 'i' } },
+						{ location: { $regex: location, $options: 'i' } }
+					)
+				}
+			} catch (e) {
+				// Nếu không parse được, dùng như string thông thường
+				locationConditions.push(
+					{ 'location.city': { $regex: location, $options: 'i' } },
+					{ 'location.district': { $regex: location, $options: 'i' } },
+					{ location: { $regex: location, $options: 'i' } }
+				)
+			}
+		} else {
+			locationConditions.push(
+				{ 'location.city': { $regex: location, $options: 'i' } },
+				{ 'location.district': { $regex: location, $options: 'i' } },
+				{ location: { $regex: location, $options: 'i' } }
+			)
+		}
+	}
+
+	// Filter by city separately
+	if (city) {
+		locationConditions.push(
+			{ 'location.city': { $regex: city, $options: 'i' } },
+			{ location: { $regex: city, $options: 'i' } }
+		)
+	}
+
+	// Filter by district separately
+	if (district) {
+		locationConditions.push(
+			{ 'location.district': { $regex: district, $options: 'i' } },
+			{ location: { $regex: district, $options: 'i' } }
+		)
+	}
+
+	// Add location conditions to query if any
+	if (locationConditions.length > 0) {
+		query.$and = query.$and || []
+		query.$and.push({ $or: locationConditions })
+	}
+
+	// Filter by condition
+	if (condition) {
+		// Map condition values từ frontend về backend
+		const conditionMap = {
+			'Good': 'Tốt',
+			'Fair': 'Khá',
+			'Old': 'Cũ',
+			'Like New': 'Like New'
+		}
+		const mappedCondition = conditionMap[condition] || condition
+		query.condition = { $in: [condition, mappedCondition] }
+	}
+
+	// Filter by brand
+	if (brand) {
+		query.brand = { $regex: brand, $options: 'i' }
+	}
+
+	// Filter by seller
 	if (sellerId) query.seller = sellerId
 
+	// Filter by price range
 	if (minPrice || maxPrice) {
 		query.price = {}
 		if (minPrice) query.price.$gte = Number(minPrice)
 		if (maxPrice) query.price.$lte = Number(maxPrice)
 	}
 
-	if (search) {
-		query.$or = [
-			{ title: { $regex: search, $options: 'i' } },
-			{ description: { $regex: search, $options: 'i' } }
-		]
+	// Filter by stock availability
+	if (hasStock === 'true' || hasStock === true) {
+		query.stock = { $gt: 0 }
 	}
 
+	// Filter by minimum rating
+	if (minRating) {
+		query.averageRating = { $gte: Number(minRating) }
+	}
+
+	// Search functionality - tìm kiếm trong title, description, brand
+	if (search) {
+		const searchRegex = { $regex: search, $options: 'i' }
+		const searchConditions = [
+			{ title: searchRegex },
+			{ description: searchRegex },
+			{ brand: searchRegex }
+		]
+		
+		// Add search conditions to $and array
+		query.$and = query.$and || []
+		query.$and.push({ $or: searchConditions })
+	}
+
+	// Sorting options
 	let sort = { createdAt: -1 }
-	if (sortBy === 'price_asc') sort = { price: 1 }
-	if (sortBy === 'price_desc') sort = { price: -1 }
+	switch (sortBy) {
+		case 'price_asc':
+			sort = { price: 1 }
+			break
+		case 'price_desc':
+			sort = { price: -1 }
+			break
+		case 'newest':
+			sort = { createdAt: -1 }
+			break
+		case 'oldest':
+			sort = { createdAt: 1 }
+			break
+		case 'views_desc':
+			sort = { views: -1 }
+			break
+		case 'rating_desc':
+			sort = { averageRating: -1, ratingCount: -1 }
+			break
+		case 'name_asc':
+			sort = { title: 1 }
+			break
+		case 'name_desc':
+			sort = { title: -1 }
+			break
+		default:
+			sort = { createdAt: -1 }
+	}
 
 	const skip = (Number(page) - 1) * Number(limit)
 
@@ -233,7 +372,7 @@ export const getProductById = asyncHandler(async (req, res) => {
 				views: product.views,
 				sku: product.sku,
 				brand: product.brand,
-				weight: product.weight,
+				size: product.size,
 				originalPrice: product.originalPrice,
 				attributes: product.attributes || [],
 				video: product.video,
@@ -392,7 +531,7 @@ export const createProduct = asyncHandler(async (req, res) => {
 		price: Number(req.body.price),
 		originalPrice: req.body.originalPrice ? Number(req.body.originalPrice) : undefined,
 		stock: req.body.stock ? Number(req.body.stock) : 1,
-		weight: req.body.weight ? Number(req.body.weight) : undefined,
+		size: req.body.size !== undefined && req.body.size !== null && req.body.size !== '' ? req.body.size : undefined,
 		brand: req.body.brand,
 		condition: condition,
 		categoryId: req.body.categoryId,
@@ -577,7 +716,7 @@ export const updateProduct = asyncHandler(async (req, res) => {
 	if (req.body.price) product.price = Number(req.body.price)
 	if (req.body.originalPrice !== undefined) product.originalPrice = req.body.originalPrice ? Number(req.body.originalPrice) : undefined
 	if (req.body.stock !== undefined) product.stock = Number(req.body.stock)
-	if (req.body.weight !== undefined) product.weight = req.body.weight ? Number(req.body.weight) : undefined
+	if (req.body.size !== undefined) product.size = req.body.size !== null && req.body.size !== '' ? req.body.size : undefined
 	if (req.body.brand !== undefined) product.brand = req.body.brand
 	if (req.body.condition) product.condition = req.body.condition
 	if (req.body.categoryId) product.categoryId = req.body.categoryId
@@ -823,7 +962,7 @@ export const getSellerProducts = asyncHandler(async (req, res) => {
 				price: product.price,
 				originalPrice: product.originalPrice || 0,
 				stock: product.stock || 0,
-				weight: product.weight || 0,
+				size: product.size || '',
 				brand: product.brand || "",
 				condition: mappedCondition,
 				categoryId: product.categoryId || "",

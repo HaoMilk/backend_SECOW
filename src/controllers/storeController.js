@@ -223,6 +223,30 @@ export const getStoreStats = asyncHandler(async (req, res) => {
   
   const thirtyOneDaysAgo = new Date(todayStart);
   thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
+  
+  // Lấy tham số startDate và endDate từ query cho biểu đồ (giới hạn chỉ 7 ngày)
+  let chartStartDate, chartEndDate;
+  if (req.query.startDate && req.query.endDate) {
+    chartStartDate = new Date(req.query.startDate + 'T00:00:00');
+    chartEndDate = new Date(req.query.endDate + 'T23:59:59');
+    
+    // Đảm bảo chỉ tối đa 7 ngày
+    const diffTime = chartEndDate.getTime() - chartStartDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    
+    if (diffDays > 7) {
+      // Nếu quá 7 ngày, chỉ lấy 7 ngày từ startDate
+      chartEndDate = new Date(chartStartDate);
+      chartEndDate.setDate(chartEndDate.getDate() + 6);
+      chartEndDate.setHours(23, 59, 59, 59);
+    }
+  } else {
+    // Mặc định: 7 ngày gần nhất
+    chartStartDate = new Date(todayStart);
+    chartStartDate.setDate(chartStartDate.getDate() - 6);
+    chartEndDate = new Date(todayStart);
+    chartEndDate.setHours(23, 59, 59, 999);
+  }
 
   // Doanh thu hôm nay
   const todayRevenueData = await Order.aggregate([
@@ -347,20 +371,32 @@ export const getStoreStats = asyncHandler(async (req, res) => {
     ? ((thirtyDaysRevenue - previousThirtyDaysRevenue) / previousThirtyDaysRevenue * 100).toFixed(1)
     : thirtyDaysRevenue > 0 ? 100 : 0;
 
-  // Biểu đồ doanh thu 7 ngày qua
+  // Biểu đồ doanh thu theo khoảng ngày được chọn (chỉ 7 ngày)
+  // Đảm bảo chỉ lấy đúng 7 ngày
+  const maxEndDate = new Date(chartStartDate);
+  maxEndDate.setDate(maxEndDate.getDate() + 6);
+  maxEndDate.setHours(23, 59, 59, 999);
+  const actualEndDate = chartEndDate > maxEndDate ? maxEndDate : chartEndDate;
+  
   const chartData = await Order.aggregate([
     {
       $match: {
         seller: sellerId,
         status: "delivered",
         paymentStatus: "paid",
-        createdAt: { $gte: sevenDaysAgo },
+        createdAt: { 
+          $gte: chartStartDate, 
+          $lte: actualEndDate 
+        },
       },
     },
     {
       $group: {
         _id: {
-          $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+          $dateToString: { 
+            format: "%Y-%m-%d", 
+            date: "$createdAt"
+          },
         },
         value: { $sum: "$totalAmount" },
       },
@@ -371,20 +407,30 @@ export const getStoreStats = asyncHandler(async (req, res) => {
   ]);
 
   // Tạo dữ liệu biểu đồ với đầy đủ 7 ngày
-  const daysOfWeek = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
   const chartDataMap = new Map(chartData.map(item => [item._id, item.value]));
   const fullChartData = [];
   
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(todayStart);
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayIndex = date.getDay();
-    const dayName = daysOfWeek[dayIndex === 0 ? 6 : dayIndex - 1];
+  // Luôn chỉ hiển thị đúng 7 ngày
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(chartStartDate);
+    date.setDate(date.getDate() + i);
+    
+    // Format date để match với MongoDB (YYYY-MM-DD)
+    // Sử dụng local date để đảm bảo chính xác theo timezone của server
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    
+    // Format ngày theo định dạng dd/mm để hiển thị
+    const dateLabel = `${day}/${month}`;
+    
+    // Lấy giá trị từ map hoặc 0 nếu không có dữ liệu
+    const revenue = chartDataMap.get(dateStr) || 0;
     
     fullChartData.push({
-      name: dayName,
-      value: chartDataMap.get(dateStr) || 0,
+      name: dateLabel,
+      value: revenue,
     });
   }
 

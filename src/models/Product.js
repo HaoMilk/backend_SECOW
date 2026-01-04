@@ -46,9 +46,8 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    weight: {
-      type: Number,
-      min: [0, "Cân nặng không được âm"],
+    size: {
+      type: mongoose.Schema.Types.Mixed,
     },
     originalPrice: {
       type: Number,
@@ -86,6 +85,17 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    ratingCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
@@ -97,6 +107,21 @@ productSchema.index({ categoryId: 1, status: 1 });
 productSchema.index({ seller: 1 });
 productSchema.index({ createdAt: -1 });
 productSchema.index({ price: 1 });
+productSchema.index({ brand: 1 });
+productSchema.index({ condition: 1 });
+productSchema.index({ averageRating: -1 });
+productSchema.index({ views: -1 });
+productSchema.index({ stock: 1 });
+
+// Text index để tìm kiếm full-text trong title, description, brand
+productSchema.index({ 
+	title: 'text', 
+	description: 'text', 
+	brand: 'text' 
+});
+
+// Compound index cho location search
+productSchema.index({ 'location.city': 1, 'location.district': 1 });
 
 const Product = mongoose.model("Product", productSchema);
 
