@@ -30,12 +30,21 @@ const orderItemSchema = new mongoose.Schema({
   },
 });
 
+function generateOrderNumber() {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 10000)
+    .toString()
+    .padStart(4, "0");
+  return `ORD${timestamp}${random}`;
+}
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
       type: String,
       required: true,
       unique: true,
+      default: generateOrderNumber,
     },
     customer: {
       type: mongoose.Schema.Types.ObjectId,
@@ -129,15 +138,7 @@ orderSchema.index({ seller: 1 });
 orderSchema.index({ status: 1 });
 orderSchema.index({ createdAt: -1 });
 
-// Pre-save hook để tạo orderNumber
-orderSchema.pre("save", async function (next) {
-  if (!this.orderNumber) {
-    const timestamp = Date.now();
-    const random = Math.floor(Math.random() * 1000);
-    this.orderNumber = `ORD${timestamp}${random}`;
-  }
-  next();
-});
+// No additional hooks required; default 'orderNumber' ensures value before validation.
 
 const Order = mongoose.model("Order", orderSchema);
 
