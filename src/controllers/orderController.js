@@ -38,9 +38,34 @@ export const createOrder = asyncHandler(async (req, res) => {
   // Kiểm tra stock và tính tổng tiền
   let totalAmount = 0;
   const orderItems = [];
+  
+  // Kiểm tra sản phẩm đầu tiên có tồn tại không
+  if (!cart.items[0]?.product || !cart.items[0].product.seller) {
+    return res.status(400).json({
+      success: false,
+      message: "Giỏ hàng chứa sản phẩm không hợp lệ",
+    });
+  }
+  
   const sellerId = cart.items[0].product.seller.toString();
+  
+  // Validate sellerId là ObjectId hợp lệ
+  if (!sellerId || sellerId === "null" || sellerId === "undefined") {
+    return res.status(400).json({
+      success: false,
+      message: "Thông tin người bán không hợp lệ",
+    });
+  }
 
   for (const item of cart.items) {
+    // Kiểm tra item.product có tồn tại không
+    if (!item.product || !item.product._id) {
+      return res.status(400).json({
+        success: false,
+        message: "Giỏ hàng chứa sản phẩm không hợp lệ",
+      });
+    }
+    
     const product = await Product.findById(item.product._id);
 
     if (!product || product.status !== "active") {
@@ -78,18 +103,47 @@ export const createOrder = asyncHandler(async (req, res) => {
     });
   }
 
+  // Kiểm tra có sản phẩm hợp lệ không
+  if (orderItems.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Không có sản phẩm hợp lệ để tạo đơn hàng",
+    });
+  }
+
   // Tạo đơn hàng
-  const order = await Order.create({
-    customer: req.user._id,
-    seller: sellerId,
-    items: orderItems,
-    totalAmount,
-    shippingAddress,
-    paymentMethod,
-    notes,
-    status: "pending",
-    paymentStatus: paymentMethod === "cod" ? "pending" : "pending",
-  });
+  let order;
+  try {
+    order = await Order.create({
+      customer: req.user._id,
+      seller: sellerId,
+      items: orderItems,
+      totalAmount,
+      shippingAddress,
+      paymentMethod,
+      notes,
+      status: "pending",
+      paymentStatus: paymentMethod === "cod" ? "pending" : "pending",
+    });
+  } catch (error) {
+    // Xử lý lỗi duplicate key (orderNumber trùng lặp - rất hiếm)
+    if (error.code === 11000) {
+      // Retry với orderNumber mới
+      order = await Order.create({
+        customer: req.user._id,
+        seller: sellerId,
+        items: orderItems,
+        totalAmount,
+        shippingAddress,
+        paymentMethod,
+        notes,
+        status: "pending",
+        paymentStatus: paymentMethod === "cod" ? "pending" : "pending",
+      });
+    } else {
+      throw error;
+    }
+  }
 
   // Giảm stock
   for (const item of cart.items) {
@@ -277,10 +331,18 @@ export const confirmDelivery = asyncHandler(async (req, res) => {
     });
   }
 
+  // Kiểm tra trạng thái đơn hàng
+  if (order.status === "delivered") {
+    return res.status(400).json({
+      success: false,
+      message: "Đơn hàng đã được xác nhận nhận hàng trước đó",
+    });
+  }
+
   if (order.status !== "shipped") {
     return res.status(400).json({
       success: false,
-      message: "Đơn hàng chưa được gửi",
+      message: `Không thể xác nhận nhận hàng. Trạng thái hiện tại: ${order.status}. Đơn hàng phải ở trạng thái "shipped" (đã gửi hàng)`,
     });
   }
 
@@ -444,7 +506,7 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  const validStatuses = ["processing", "shipped"];
+  const validStatuses = ["packaged", "shipped"];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({
       success: false,

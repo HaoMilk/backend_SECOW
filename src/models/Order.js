@@ -35,7 +35,9 @@ function generateOrderNumber() {
   const random = Math.floor(Math.random() * 10000)
     .toString()
     .padStart(4, "0");
-  return `ORD${timestamp}${random}`;
+  // Thêm process ID và counter để tránh trùng lặp
+  const processId = process.pid ? process.pid.toString().slice(-3) : "000";
+  return `ORD${timestamp}${processId}${random}`;
 }
 
 const orderSchema = new mongoose.Schema(
@@ -91,7 +93,7 @@ const orderSchema = new mongoose.Schema(
       enum: [
         "pending", // Chờ xác nhận
         "confirmed", // Đã xác nhận
-        "processing", // Đang xử lý
+        "packaged", // Đã đóng gói
         "shipped", // Đã gửi hàng
         "delivered", // Đã giao hàng
         "cancelled", // Đã hủy
