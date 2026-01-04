@@ -26,6 +26,22 @@ const messageSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    // Optional product context attached to the message
+    product: {
+      productId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Product",
+      },
+      title: {
+        type: String,
+      },
+      price: {
+        type: Number,
+      },
+      image: {
+        type: String,
+      },
+    },
     isRead: {
       type: Boolean,
       default: false,
