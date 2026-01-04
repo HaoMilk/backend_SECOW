@@ -202,68 +202,280 @@ export const getStoreStats = asyncHandler(async (req, res) => {
     });
   }
 
-  // Thống kê đơn hàng
-  const totalOrders = await Order.countDocuments({ seller: req.user._id });
-  const pendingOrders = await Order.countDocuments({
-    seller: req.user._id,
-    status: "pending",
-  });
-  const confirmedOrders = await Order.countDocuments({
-    seller: req.user._id,
-    status: "confirmed",
-  });
-  const deliveredOrders = await Order.countDocuments({
-    seller: req.user._id,
-    status: "delivered",
-  });
+  const sellerId = req.user._id;
+  const now = new Date();
+  
+  // Tính toán các mốc thời gian
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+  
+  const sevenDaysAgo = new Date(todayStart);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  const eightDaysAgo = new Date(todayStart);
+  eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
+  
+  const thirtyDaysAgo = new Date(todayStart);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const thirtyOneDaysAgo = new Date(todayStart);
+  thirtyOneDaysAgo.setDate(thirtyOneDaysAgo.getDate() - 31);
 
-  // Doanh thu
-  const revenueData = await Order.aggregate([
+  // Doanh thu hôm nay
+  const todayRevenueData = await Order.aggregate([
     {
       $match: {
-        seller: req.user._id,
+        seller: sellerId,
         status: "delivered",
         paymentStatus: "paid",
+        createdAt: { $gte: todayStart },
       },
     },
     {
       $group: {
         _id: null,
         totalRevenue: { $sum: "$totalAmount" },
-        orderCount: { $sum: 1 },
       },
     },
   ]);
+  const todayRevenue = todayRevenueData[0]?.totalRevenue || 0;
 
-  const totalRevenue = revenueData[0]?.totalRevenue || 0;
-  const orderCount = revenueData[0]?.orderCount || 0;
+  // Doanh thu hôm qua
+  const yesterdayRevenueData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: yesterdayStart, $lt: todayStart },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+  ]);
+  const yesterdayRevenue = yesterdayRevenueData[0]?.totalRevenue || 0;
+  const todayRevenueChange = yesterdayRevenue > 0 
+    ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue * 100).toFixed(1)
+    : todayRevenue > 0 ? 100 : 0;
+
+  // Doanh thu 7 ngày
+  const sevenDaysRevenueData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: sevenDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+  ]);
+  const sevenDaysRevenue = sevenDaysRevenueData[0]?.totalRevenue || 0;
+
+  // Doanh thu 7 ngày trước đó
+  const previousSevenDaysRevenueData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: eightDaysAgo, $lt: sevenDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+  ]);
+  const previousSevenDaysRevenue = previousSevenDaysRevenueData[0]?.totalRevenue || 0;
+  const sevenDaysRevenueChange = previousSevenDaysRevenue > 0
+    ? ((sevenDaysRevenue - previousSevenDaysRevenue) / previousSevenDaysRevenue * 100).toFixed(1)
+    : sevenDaysRevenue > 0 ? 100 : 0;
+
+  // Doanh thu 30 ngày
+  const thirtyDaysRevenueData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: thirtyDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+  ]);
+  const thirtyDaysRevenue = thirtyDaysRevenueData[0]?.totalRevenue || 0;
+
+  // Doanh thu 30 ngày trước đó
+  const previousThirtyDaysRevenueData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: thirtyOneDaysAgo, $lt: thirtyDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$totalAmount" },
+      },
+    },
+  ]);
+  const previousThirtyDaysRevenue = previousThirtyDaysRevenueData[0]?.totalRevenue || 0;
+  const thirtyDaysRevenueChange = previousThirtyDaysRevenue > 0
+    ? ((thirtyDaysRevenue - previousThirtyDaysRevenue) / previousThirtyDaysRevenue * 100).toFixed(1)
+    : thirtyDaysRevenue > 0 ? 100 : 0;
+
+  // Biểu đồ doanh thu 7 ngày qua
+  const chartData = await Order.aggregate([
+    {
+      $match: {
+        seller: sellerId,
+        status: "delivered",
+        paymentStatus: "paid",
+        createdAt: { $gte: sevenDaysAgo },
+      },
+    },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+        },
+        value: { $sum: "$totalAmount" },
+      },
+    },
+    {
+      $sort: { _id: 1 },
+    },
+  ]);
+
+  // Tạo dữ liệu biểu đồ với đầy đủ 7 ngày
+  const daysOfWeek = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+  const chartDataMap = new Map(chartData.map(item => [item._id, item.value]));
+  const fullChartData = [];
+  
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(todayStart);
+    date.setDate(date.getDate() - i);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayIndex = date.getDay();
+    const dayName = daysOfWeek[dayIndex === 0 ? 6 : dayIndex - 1];
+    
+    fullChartData.push({
+      name: dayName,
+      value: chartDataMap.get(dateStr) || 0,
+    });
+  }
+
+  // Thống kê đơn hàng
+  const totalOrders = await Order.countDocuments({ seller: sellerId });
+  const pendingOrders = await Order.countDocuments({
+    seller: sellerId,
+    status: "pending",
+  });
+  const confirmedOrders = await Order.countDocuments({
+    seller: sellerId,
+    status: "confirmed",
+  });
+  const deliveredOrders = await Order.countDocuments({
+    seller: sellerId,
+    status: "delivered",
+  });
+  const cancelledOrders = await Order.countDocuments({
+    seller: sellerId,
+    status: { $in: ["cancelled", "rejected"] },
+  });
+
+  // Đơn hàng gần đây (5 đơn mới nhất)
+  const recentOrders = await Order.find({ seller: sellerId })
+    .populate("customer", "name email")
+    .populate("items.product", "title images")
+    .sort({ createdAt: -1 })
+    .limit(5)
+    .select("orderNumber items totalAmount status createdAt");
 
   // Sản phẩm
   const totalProducts = await Product.countDocuments({
-    seller: req.user._id,
+    seller: sellerId,
   });
   const activeProducts = await Product.countDocuments({
-    seller: req.user._id,
+    seller: sellerId,
     status: "active",
+  });
+  const outOfStockProducts = await Product.countDocuments({
+    seller: sellerId,
+    status: "active",
+    stock: 0,
+  });
+  const pendingProducts = await Product.countDocuments({
+    seller: sellerId,
+    status: "pending",
+  });
+  const violationProducts = await Product.countDocuments({
+    seller: sellerId,
+    status: "violation",
   });
 
   res.status(200).json({
     success: true,
     data: {
       stats: {
+        revenue: {
+          today: todayRevenue,
+          todayChange: parseFloat(todayRevenueChange),
+          sevenDays: sevenDaysRevenue,
+          sevenDaysChange: parseFloat(sevenDaysRevenueChange),
+          thirtyDays: thirtyDaysRevenue,
+          thirtyDaysChange: parseFloat(thirtyDaysRevenueChange),
+          total: thirtyDaysRevenue,
+        },
+        chartData: fullChartData,
         orders: {
           total: totalOrders,
           pending: pendingOrders,
           confirmed: confirmedOrders,
           delivered: deliveredOrders,
+          cancelled: cancelledOrders,
         },
-        revenue: {
-          total: totalRevenue,
-          orderCount,
-        },
+        recentOrders: recentOrders.map(order => ({
+          _id: order._id,
+          orderNumber: order.orderNumber,
+          items: order.items.map(item => ({
+            productName: item.productName,
+            productImage: item.productImage,
+            quantity: item.quantity,
+          })),
+          totalAmount: order.totalAmount,
+          status: order.status,
+          createdAt: order.createdAt,
+        })),
         products: {
           total: totalProducts,
           active: activeProducts,
+          outOfStock: outOfStockProducts,
+          pending: pendingProducts,
+          violation: violationProducts,
         },
         rating: store.rating,
       },
