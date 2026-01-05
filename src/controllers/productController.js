@@ -2,6 +2,7 @@ import Product from '../models/Product.js'
 import Category from '../models/Category.js'
 import Store from '../models/Store.js'
 import Order from '../models/Order.js'
+import Cart from '../models/Cart.js'
 import asyncHandler from '../middleware/asyncHandler.js'
 import { uploadToCloudinary } from '../config/cloudinary.js'
 
@@ -1214,6 +1215,104 @@ export const rejectProduct = asyncHandler(async (req, res) => {
 		message: 'Đã từ chối sản phẩm',
 		data: {
 			product
+		}
+	})
+})
+
+/**
+ * ==============================
+ * GET RECOMMENDATIONS (PUBLIC)
+ * ==============================
+ * Lấy sản phẩm gợi ý dựa trên:
+ * - Sản phẩm trong giỏ hàng (nếu user đã đăng nhập)
+ * - Danh mục của sản phẩm trong giỏ hàng
+ * - Sản phẩm phổ biến/mới nhất nếu không có giỏ hàng
+ */
+export const getRecommendations = asyncHandler(async (req, res) => {
+	const { limit = 5 } = req.query
+	const userId = req.user && req.user._id ? req.user._id : null
+
+	let excludeProductIds = []
+	let categoryIds = []
+
+	// Nếu user đã đăng nhập, lấy sản phẩm từ giỏ hàng
+	if (userId) {
+		try {
+			const cart = await Cart.findOne({ user: userId }).populate('items.product')
+			if (cart && cart.items && cart.items.length > 0) {
+				// Lấy productIds để loại trừ
+				excludeProductIds = cart.items
+					.map(item => item.product?._id)
+					.filter(Boolean)
+					.map(id => id.toString())
+
+				// Lấy categoryIds từ các sản phẩm trong giỏ hàng
+				const products = cart.items
+					.map(item => item.product)
+					.filter(Boolean)
+				
+				categoryIds = [...new Set(products.map(p => p && p.categoryId ? p.categoryId : null).filter(Boolean))]
+			}
+		} catch (error) {
+			// Nếu có lỗi khi lấy cart, tiếp tục với logic mặc định
+			console.error('Error fetching cart for recommendations:', error)
+		}
+	}
+
+	// Nếu có categoryIds, tìm sản phẩm cùng category
+	// Nếu không, lấy sản phẩm phổ biến/mới nhất
+	const query = {
+		status: 'active',
+		stock: { $gt: 0 }
+	}
+
+	// Loại trừ sản phẩm đã có trong giỏ hàng
+	if (excludeProductIds.length > 0) {
+		query._id = { $nin: excludeProductIds }
+	}
+
+	// Ưu tiên sản phẩm cùng category với giỏ hàng
+	let sort = {}
+	if (categoryIds.length > 0) {
+		// Tìm sản phẩm cùng category, sắp xếp theo views và rating
+		query.categoryId = { $in: categoryIds }
+		sort = { views: -1, averageRating: -1, createdAt: -1 }
+	} else {
+		// Nếu không có category, lấy sản phẩm phổ biến/mới nhất
+		sort = { views: -1, averageRating: -1, createdAt: -1 }
+	}
+
+	const products = await Product.find(query)
+		.populate('seller', 'name avatarUrl')
+		.sort(sort)
+		.limit(Number(limit))
+		.lean()
+
+	// Format products giống như getProducts
+	const formattedProducts = products.map((product) => {
+		const conditionMap = {
+			'Tốt': 'Good',
+			'Khá': 'Fair',
+			'Cũ': 'Old',
+			'Like New': 'Like New'
+		}
+		const mappedCondition = conditionMap[product.condition] || product.condition
+
+		return {
+			id: product._id.toString(),
+			title: product.title,
+			price: product.price,
+			oldPrice: product.originalPrice || undefined,
+			imageUrl: product.images?.length > 0
+				? product.images[0]
+				: 'https://placehold.co/400x300',
+		}
+	})
+
+	res.status(200).json({
+		success: true,
+		data: {
+			recommendations: formattedProducts
 		}
 	})
 })

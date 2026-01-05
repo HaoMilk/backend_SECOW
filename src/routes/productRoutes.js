@@ -11,8 +11,9 @@ import {
   approveProduct,
   rejectProduct,
   hideProduct,
+  getRecommendations,
 } from "../controllers/productController.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, optionalAuth } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
 import { upload } from "../config/cloudinary.js";
 
@@ -20,6 +21,7 @@ const router = express.Router();
 
 // Public routes
 router.get("/metadata", getProductMetadata);
+router.get("/recommendations", optionalAuth, getRecommendations);
 router.get("/", getProducts);
 
 // Admin routes (phải đặt TRƯỚC route /:id để tránh conflict)
