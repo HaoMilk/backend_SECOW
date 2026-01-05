@@ -1,6 +1,7 @@
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import asyncHandler from "../middleware/asyncHandler.js";
+import { getIO } from "../utils/socket.js";
 
 // @desc    Lấy danh sách cuộc trò chuyện
 // @route   GET /api/v1/messages/conversations
@@ -46,7 +47,8 @@ export const getMessages = asyncHandler(async (req, res) => {
     });
   }
 
-  if (!conversation.participants.includes(req.user._id)) {
+  const participantIds = conversation.participants.map((p) => p.toString());
+  if (!participantIds.includes(req.user._id.toString())) {
     return res.status(403).json({
       success: false,
       message: "Không có quyền truy cập cuộc trò chuyện này",
@@ -91,7 +93,7 @@ export const getMessages = asyncHandler(async (req, res) => {
 // @route   POST /api/v1/messages
 // @access  Private
 export const sendMessage = asyncHandler(async (req, res) => {
-  const { receiverId, content, images } = req.body;
+  const { receiverId, content, images, product } = req.body;
 
   if (!receiverId || !content) {
     return res.status(400).json({
@@ -119,6 +121,14 @@ export const sendMessage = asyncHandler(async (req, res) => {
     receiver: receiverId,
     content,
     images: images || [],
+    product: product
+      ? {
+          productId: product.productId || undefined,
+          title: product.title,
+          price: product.price,
+          image: product.image,
+        }
+      : undefined,
   });
 
   // Cập nhật conversation
@@ -133,6 +143,23 @@ export const sendMessage = asyncHandler(async (req, res) => {
 
   await message.populate("sender", "name avatar");
   await message.populate("receiver", "name avatar");
+
+  // Emit socket events to both participants
+  try {
+    const io = getIO();
+    // Notify receiver about new message
+    io.to(`user:${receiverId}`).emit("message:new", {
+      conversationId: conversation._id.toString(),
+      message,
+    });
+    // Notify both to update conversation list
+    io.to(`user:${receiverId}`).emit("conversation:updated", {
+      conversationId: conversation._id.toString(),
+    });
+    io.to(`user:${req.user._id.toString()}`).emit("conversation:updated", {
+      conversationId: conversation._id.toString(),
+    });
+  } catch {}
 
   res.status(201).json({
     success: true,
@@ -175,6 +202,16 @@ export const markAsRead = asyncHandler(async (req, res) => {
     conversation.unreadCount.set(req.user._id.toString(), 0);
     await conversation.save();
   }
+
+  // Inform sender that message was read
+  try {
+    const io = getIO();
+    io.to(`user:${message.sender.toString()}`).emit("message:read", {
+      messageId: message._id.toString(),
+      conversationId: message.conversation.toString(),
+      readAt: message.readAt,
+    });
+  } catch {}
 
   res.status(200).json({
     success: true,
