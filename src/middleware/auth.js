@@ -64,3 +64,28 @@ export const authorize = (...roles) => {
   };
 };
 
+// Optional authentication - không bắt buộc phải có token
+export const optionalAuth = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId).select("-password");
+
+        if (user && user.isActive) {
+          req.user = user;
+        }
+      } catch (error) {
+        // Token không hợp lệ nhưng không bắt buộc, tiếp tục không có user
+      }
+    }
+
+    next();
+  } catch (error) {
+    // Lỗi không quan trọng, tiếp tục không có user
+    next();
+  }
+};
+
