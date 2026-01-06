@@ -13,6 +13,7 @@ import {
   getRevenueChart,
   getUserGrowthChart,
 } from "../controllers/adminController.js";
+import { getAllOrders } from "../controllers/orderController.js";
 import { authenticate } from "../middleware/auth.js";
 import { authorize } from "../middleware/auth.js";
 
@@ -29,6 +30,7 @@ router.get("/users", getUsers);
 router.get("/stores/pending", getPendingStores);
 router.get("/stores", getAllStores);
 router.get("/products/pending", getPendingProducts);
+router.get("/orders", getAllOrders);
 router.put("/stores/:storeId/approve", approveStore);
 router.put("/stores/:storeId/reject", rejectStore);
 router.put("/stores/:storeId/status", updateStoreStatus);

@@ -100,3 +100,108 @@ export const sendPasswordResetEmail = async (email, resetToken) => {
   }
 };
 
+// @desc    Gửi email thông báo cập nhật trạng thái đơn hàng
+// @param   {String} email - Email người nhận
+// @param   {Object} orderData - Thông tin đơn hàng
+// @param   {String} status - Trạng thái mới của đơn hàng
+// @param   {String} recipientType - "customer" hoặc "seller"
+export const sendOrderStatusUpdateEmail = async (email, orderData, status, recipientType = "customer") => {
+  try {
+    const transporter = createTransporter();
+
+    // Mapping trạng thái sang tiếng Việt
+    const statusMap = {
+      pending: "Chờ xác nhận",
+      confirmed: "Đã xác nhận",
+      packaged: "Đã đóng gói",
+      shipped: "Đã gửi hàng",
+      delivered: "Đã giao hàng",
+      cancelled: "Đã hủy",
+      rejected: "Đã từ chối",
+    };
+
+    const statusText = statusMap[status] || status;
+    const orderUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/orders/${orderData._id || orderData.id}`;
+
+    // Nội dung email khác nhau cho customer và seller
+    let subject, message, actionText;
+    
+    if (recipientType === "customer") {
+      subject = `Cập nhật trạng thái đơn hàng #${orderData.orderNumber}`;
+      message = `Đơn hàng của bạn đã được cập nhật trạng thái thành: <strong>${statusText}</strong>`;
+      actionText = "Xem chi tiết đơn hàng";
+    } else {
+      subject = `Cập nhật trạng thái đơn hàng #${orderData.orderNumber}`;
+      message = `Đơn hàng đã được cập nhật trạng thái thành: <strong>${statusText}</strong>`;
+      actionText = "Xem chi tiết đơn hàng";
+    }
+
+    // Màu sắc theo trạng thái
+    let statusColor = "#10b981"; // Mặc định xanh lá
+    if (status === "cancelled" || status === "rejected") {
+      statusColor = "#ef4444"; // Đỏ
+    } else if (status === "pending") {
+      statusColor = "#f59e0b"; // Vàng
+    } else if (status === "delivered") {
+      statusColor = "#10b981"; // Xanh lá
+    } else {
+      statusColor = "#3b82f6"; // Xanh dương
+    }
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #10b981;">Thông báo cập nhật đơn hàng</h2>
+        <p>Xin chào,</p>
+        <p>${message}</p>
+        
+        <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; width: 120px;">Mã đơn hàng:</td>
+              <td style="padding: 8px 0; font-weight: bold;">#${orderData.orderNumber}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Trạng thái:</td>
+              <td style="padding: 8px 0;">
+                <span style="background-color: ${statusColor}; color: white; padding: 4px 12px; border-radius: 4px; font-weight: bold;">
+                  ${statusText}
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280;">Tổng tiền:</td>
+              <td style="padding: 8px 0; font-weight: bold;">${new Intl.NumberFormat("vi-VN", {
+                style: "currency",
+                currency: "VND",
+              }).format(orderData.totalAmount || 0)}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${orderUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; display: inline-block;">
+            ${actionText}
+          </a>
+        </div>
+
+        <p>Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ với chúng tôi.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
+        <p style="color: #6b7280; font-size: 12px;">Đây là email tự động, vui lòng không trả lời.</p>
+      </div>
+    `;
+
+    await transporter.sendMail({
+      from: `"SecondLife" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject,
+      html,
+    });
+
+    return true;
+  } catch (error) {
+    console.error("Error sending order status update email:", error);
+    // Không throw error để không làm gián đoạn flow chính
+    return false;
+  }
+};
+

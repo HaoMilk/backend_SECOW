@@ -29,9 +29,10 @@ const userSchema = new mongoose.Schema(
         validator: function(v) {
           // Chỉ validate nếu có giá trị, không bắt buộc cho user cũ
           if (!v) return true;
-          return /^[0-9]{10,11}$/.test(v);
+          // Vietnamese phone number: must start with 0 and have exactly 10 digits
+          return /^0[0-9]{9}$/.test(v);
         },
-        message: "Số điện thoại phải có 10-11 chữ số",
+        message: "Số điện thoại phải có 10 chữ số và bắt đầu bằng số 0",
       },
     },
     dateOfBirth: {
