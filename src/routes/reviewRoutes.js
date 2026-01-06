@@ -5,6 +5,7 @@ import {
   getProductReviews,
   checkOrderReviewStatus,
   getOrderReviews,
+  getCustomerReviews,
 } from "../controllers/reviewController.js";
 import { authenticate } from "../middleware/auth.js";
 
@@ -19,6 +20,7 @@ router.use(authenticate);
 router.post("/", createReview);
 router.get("/order/:orderId/check", checkOrderReviewStatus);
 router.get("/order/:orderId", getOrderReviews);
+router.get("/customer/:customerId", getCustomerReviews);
 
 export default router;
 

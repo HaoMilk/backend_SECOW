@@ -101,6 +101,36 @@ export const verifyOTP = async (req, res) => {
   try {
     const { email, code, name, password, phone, dateOfBirth } = req.body;
 
+    // Validate Vietnamese phone number: must start with 0 and have exactly 10 digits
+    if (phone && !/^0[0-9]{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: "Số điện thoại phải có 10 chữ số và bắt đầu bằng số 0",
+      });
+    }
+
+    // Validate age (must be at least 16 years old)
+    if (dateOfBirth) {
+      const birthDate = new Date(dateOfBirth);
+      const today = new Date();
+      const age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      const dayDiff = today.getDate() - birthDate.getDate();
+      
+      // Calculate exact age
+      let exactAge = age;
+      if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+        exactAge--;
+      }
+      
+      if (exactAge < 16) {
+        return res.status(400).json({
+          success: false,
+          message: "Bạn phải đủ 16 tuổi trở lên để đăng ký",
+        });
+      }
+    }
+
     // Tìm OTP hợp lệ
     const otpRecord = await OTP.findOne({
       email,
@@ -136,7 +166,7 @@ export const verifyOTP = async (req, res) => {
         email,
         password,
         phone,
-        dateOfBirth: new Date(dateOfBirth),
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
         isEmailVerified: true,
       });
     } catch (userError) {
@@ -541,13 +571,37 @@ export const changePassword = asyncHandler(async (req, res) => {
 
 // Cập nhật thông tin cá nhân
 export const updateProfile = asyncHandler(async (req, res) => {
-  const { name, phone, address, avatar } = req.body;
+  const { name, phone, address, avatar, dateOfBirth } = req.body;
 
   const updateData = {};
   if (name) updateData.name = name;
   if (phone) updateData.phone = phone;
   if (address) updateData.address = address;
   if (avatar) updateData.avatar = avatar;
+  if (dateOfBirth) {
+    // Validate age - must be at least 16 years old
+    const birthDate = new Date(dateOfBirth);
+    const today = new Date();
+    const age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    const dayDiff = today.getDate() - birthDate.getDate();
+    
+    // Calculate exact age
+    let exactAge = age;
+    if (monthDiff < 0 || (monthDiff === 0 && dayDiff < 0)) {
+      exactAge--;
+    }
+
+    if (exactAge < 16) {
+      return res.status(400).json({
+        success: false,
+        message: "Ngày sinh không hợp lệ. Bạn phải đủ 16 tuổi trở lên.",
+      });
+    }
+
+    // Convert date string to Date object
+    updateData.dateOfBirth = birthDate;
+  }
 
   const user = await User.findByIdAndUpdate(req.user._id, updateData, {
     new: true,

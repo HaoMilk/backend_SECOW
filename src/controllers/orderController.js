@@ -563,3 +563,57 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Lấy danh sách tất cả đơn hàng (Admin)
+// @route   GET /api/v1/admin/orders
+// @access  Private (Admin)
+export const getAllOrders = asyncHandler(async (req, res) => {
+  const { status, paymentStatus, page = 1, limit = 10, customerId, sellerId } = req.query;
+
+  const query = {};
+  
+  // Filter by status
+  if (status) {
+    query.status = status;
+  }
+  
+  // Filter by payment status
+  if (paymentStatus) {
+    query.paymentStatus = paymentStatus;
+  }
+  
+  // Filter by customer
+  if (customerId) {
+    query.customer = customerId;
+  }
+  
+  // Filter by seller
+  if (sellerId) {
+    query.seller = sellerId;
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const orders = await Order.find(query)
+    .populate("customer", "name email phone")
+    .populate("seller", "name email")
+    .populate("items.product", "title images")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit));
+
+  const total = await Order.countDocuments(query);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      orders,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    },
+  });
+});
+

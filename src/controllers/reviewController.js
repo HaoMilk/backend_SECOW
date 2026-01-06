@@ -254,6 +254,55 @@ export const getOrderReviews = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Lấy đánh giá của một customer (cho phép seller xem)
+// @route   GET /api/v1/reviews/customer/:customerId
+// @access  Private (Seller, Admin)
+export const getCustomerReviews = asyncHandler(async (req, res) => {
+  const { customerId } = req.params;
+  const { page = 1, limit = 10 } = req.query;
+
+  // Chỉ seller và admin mới được xem đánh giá của customer
+  if (req.user.role !== "seller" && req.user.role !== "admin") {
+    return res.status(403).json({
+      success: false,
+      message: "Chỉ người bán và admin mới có quyền xem đánh giá của khách hàng",
+    });
+  }
+
+  const skip = (Number(page) - 1) * Number(limit);
+
+  const reviews = await Review.find({ customer: customerId })
+    .populate("customer", "name avatar")
+    .populate("seller", "name avatar")
+    .populate("product", "title images")
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(Number(limit));
+
+  const total = await Review.countDocuments({ customer: customerId });
+
+  // Tính rating trung bình mà customer đã đánh giá
+  const avgRating = await Review.aggregate([
+    { $match: { customer: new mongoose.Types.ObjectId(customerId) } },
+    { $group: { _id: null, avgRating: { $avg: "$rating" } } },
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      reviews,
+      averageRating: avgRating[0]?.avgRating || 0,
+      totalReviews: total,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    },
+  });
+});
+
 // Helper function để cập nhật rating của store
 const updateStoreRating = async (sellerId) => {
   const reviews = await Review.find({ seller: sellerId });
