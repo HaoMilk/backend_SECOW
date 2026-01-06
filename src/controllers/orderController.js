@@ -4,6 +4,98 @@ import Product from "../models/Product.js";
 import Transaction from "../models/Transaction.js";
 import Review from "../models/Review.js";
 import asyncHandler from "../middleware/asyncHandler.js";
+import { sendOrderStatusUpdateEmail } from "../services/emailService.js";
+import { getIO } from "../utils/socket.js";
+
+// Helper function để gửi thông báo cập nhật trạng thái đơn hàng
+const notifyOrderStatusUpdate = async (order, newStatus, updatedBy) => {
+  try {
+    // Populate customer và seller nếu chưa có (kiểm tra xem có phải ObjectId không)
+    if (!order.customer.email || typeof order.customer.email === 'undefined') {
+      await order.populate("customer", "name email");
+    }
+    if (!order.seller.email || typeof order.seller.email === 'undefined') {
+      await order.populate("seller", "name email");
+    }
+
+    const orderData = {
+      _id: order._id,
+      id: order._id,
+      orderNumber: order.orderNumber,
+      totalAmount: order.totalAmount,
+    };
+
+    // Gửi email cho customer
+    if (order.customer && order.customer.email) {
+      await sendOrderStatusUpdateEmail(
+        order.customer.email,
+        orderData,
+        newStatus,
+        "customer"
+      );
+    }
+
+    // Gửi email cho seller (nếu seller khác với người cập nhật)
+    const sellerIdStr = (order.seller._id || order.seller).toString();
+    const updatedByStr = updatedBy.toString();
+    if (order.seller && order.seller.email && sellerIdStr !== updatedByStr) {
+      await sendOrderStatusUpdateEmail(
+        order.seller.email,
+        orderData,
+        newStatus,
+        "seller"
+      );
+    }
+
+    // Mapping trạng thái sang tiếng Việt
+    const statusMap = {
+      pending: "Chờ xác nhận",
+      confirmed: "Đã xác nhận",
+      packaged: "Đã đóng gói",
+      shipped: "Đã gửi hàng",
+      delivered: "Đã giao hàng",
+      cancelled: "Đã hủy",
+      rejected: "Đã từ chối",
+    };
+    const statusText = statusMap[newStatus] || newStatus;
+
+    // Gửi notification qua socket.io cho customer
+    try {
+      const io = getIO();
+      const customerIdStr = (order.customer._id || order.customer).toString();
+      io.to(`user:${customerIdStr}`).emit("order:status-updated", {
+        orderId: order._id.toString(),
+        orderNumber: order.orderNumber,
+        status: newStatus,
+        statusText: statusText,
+        message: `Đơn hàng #${order.orderNumber} đã được cập nhật trạng thái thành "${statusText}"`,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (socketError) {
+      console.error("Error sending socket notification:", socketError);
+    }
+
+    // Gửi notification qua socket.io cho seller (nếu khác với người cập nhật)
+    if (sellerIdStr !== updatedByStr) {
+      try {
+        const io = getIO();
+        io.to(`user:${sellerIdStr}`).emit("order:status-updated", {
+          orderId: order._id.toString(),
+          orderNumber: order.orderNumber,
+          status: newStatus,
+          statusText: statusText,
+          message: `Đơn hàng #${order.orderNumber} đã được cập nhật trạng thái thành "${statusText}"`,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (socketError) {
+        console.error("Error sending socket notification:", socketError);
+      }
+    }
+  } catch (error) {
+    // Log error nhưng không throw để không làm gián đoạn flow chính
+    console.error("Error sending order status notification:", error);
+  }
+};
 
 // @desc    Tạo đơn hàng từ giỏ hàng
 // @route   POST /api/v1/orders
@@ -321,6 +413,9 @@ export const cancelOrder = asyncHandler(async (req, res) => {
 
   await order.save();
 
+  // Gửi thông báo khi hủy đơn hàng
+  await notifyOrderStatusUpdate(order, "cancelled", req.user._id);
+
   res.status(200).json({
     success: true,
     message: "Đã hủy đơn hàng",
@@ -380,6 +475,9 @@ export const confirmDelivery = asyncHandler(async (req, res) => {
   }
 
   await order.save();
+
+  // Gửi thông báo khi xác nhận nhận hàng
+  await notifyOrderStatusUpdate(order, "delivered", req.user._id);
 
   res.status(200).json({
     success: true,
@@ -458,6 +556,9 @@ export const confirmOrder = asyncHandler(async (req, res) => {
   order.status = "confirmed";
   await order.save();
 
+  // Gửi thông báo khi xác nhận đơn hàng
+  await notifyOrderStatusUpdate(order, "confirmed", req.user._id);
+
   res.status(200).json({
     success: true,
     message: "Đã xác nhận đơn hàng",
@@ -511,6 +612,9 @@ export const rejectOrder = asyncHandler(async (req, res) => {
 
   await order.save();
 
+  // Gửi thông báo khi từ chối đơn hàng
+  await notifyOrderStatusUpdate(order, "rejected", req.user._id);
+
   res.status(200).json({
     success: true,
     message: "Đã từ chối đơn hàng",
@@ -551,8 +655,12 @@ export const updateOrderStatus = asyncHandler(async (req, res) => {
     });
   }
 
+  const oldStatus = order.status;
   order.status = status;
   await order.save();
+
+  // Gửi thông báo khi cập nhật trạng thái
+  await notifyOrderStatusUpdate(order, status, req.user._id);
 
   res.status(200).json({
     success: true,
